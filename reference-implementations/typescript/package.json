@@ -47,6 +47,9 @@
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  },
   "peerDependencies": {
     "did-resolver": ">=4.0.0"
   },
