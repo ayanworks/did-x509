@@ -4,6 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { X509Certificate } from '@peculiar/x509';
+import * as asn1js from 'asn1js';
 import {
   loadPemCertificateChain,
   decodeCertificate,
@@ -217,5 +219,58 @@ describe('extractPublicKeyAsJwk', () => {
     if (jwk.kid) {
       expect(typeof jwk.kid).toBe('string');
     }
+  });
+});
+
+/**
+ * Tamper with a certificate's serialNumber (signed content) without breaking
+ * the DER structure: parse the TBS sequence, flip bits in the serial integer,
+ * re-serialize. The modified certificate parses fine but its signature no
+ * longer verifies.
+ */
+function tamperSerialNumber(cert: X509Certificate): X509Certificate {
+  const root = asn1js.fromBER(cert.rawData).result;
+  const tbs = (root as asn1js.Sequence).valueBlock.value[0]! as asn1js.Sequence;
+  const serial = tbs.valueBlock.value.find(
+    b => b instanceof asn1js.Integer
+  )! as asn1js.Integer;
+  const view = serial.valueBlock.valueHexView;
+  expect(view.length).toBeGreaterThan(4);
+  view[view.length - 1] ^= 0xff;
+  view[view.length - 2] ^= 0x55;
+  return new X509Certificate(root.toBER());
+}
+
+describe('verifyCertificateChain tamper detection', () => {
+  it('detects tampered RSA leaf signature (ms chain)', async () => {
+    const chain = loadPemCertificateChain(msChainPem);
+    await expect(
+      verifyCertificateChain([chain[0]!, chain[1]!, chain[2]!], true)
+    ).resolves.toBeUndefined();
+
+    const tamperedLeaf = tamperSerialNumber(chain[0]!);
+    await expect(
+      verifyCertificateChain([tamperedLeaf, chain[1]!, chain[2]!], true)
+    ).rejects.toThrow('signature verification failed');
+  });
+
+  it('detects tampered ECDSA leaf signature (fulcio email chain)', async () => {
+    const chain = loadPemCertificateChain(fulcioEmailChainPem);
+    await expect(
+      verifyCertificateChain([chain[0]!, chain[1]!], true)
+    ).resolves.toBeUndefined();
+
+    const tamperedLeaf = tamperSerialNumber(chain[0]!);
+    await expect(
+      verifyCertificateChain([tamperedLeaf, chain[1]!], true)
+    ).rejects.toThrow('signature verification failed');
+  });
+
+  it('detects tampered RSA intermediate signature', async () => {
+    const chain = loadPemCertificateChain(msChainPem);
+    const tamperedIntermediate = tamperSerialNumber(chain[1]!);
+    await expect(
+      verifyCertificateChain([chain[0]!, tamperedIntermediate, chain[2]!], true)
+    ).rejects.toThrow('signature verification failed');
   });
 });
