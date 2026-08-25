@@ -2,6 +2,8 @@
 
 Label: wayfinder:map
 
+> **MIGRATED**: this effort now lives on GitHub Issues — map: https://github.com/ayanworks/did-x509/issues/4 (tickets #5–#11). This local copy is a frozen snapshot of charting state; do not update it.
+
 ## Destination
 
 `@didx509/core` (TypeScript) hardened in place to match Microsoft's didx509cpp cryptographic rigor: resolver-plugin validation bypass closed, RFC 5280 verification gaps closed to the agreed policy, semantic divergences (subject multi-values, percent-decoding, aliasing) resolved by explicit policy, and a ratified implementation spec describing every change — verified by test parity with didx509cpp vectors. Pure-TS stack retained; output format stays `cid/v1` + `JsonWebKey` (intentional modernization, not a bug).
