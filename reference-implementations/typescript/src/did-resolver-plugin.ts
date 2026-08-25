@@ -12,12 +12,16 @@
  * const resolver = new Resolver(getDidX509Resolver());
  * const result = await resolver.resolve(
  *   'did:x509:0:sha256:...',
- *   { x509chain: 'base64url_der1,base64url_der2,...' }
+ *   { x509chain: 'base64url_der1,base64url_der2,...', skipValidityPeriodCheck: true }
  * );
  * ```
+ *
+ * Supported resolution options:
+ * - `x509chain` (required): comma-separated base64url-encoded DER certificates, leaf first.
+ * - `skipValidityPeriodCheck`: skip certificate validity-period checks (for expired test chains).
  */
 
-import { loadX509Chain, decodeCertificate, extractPublicKeyAsJwk, getKeyUsage } from './x509.js';
+import { loadX509Chain, decodeCertificate, extractPublicKeyAsJwk, getKeyUsage, verifyCertificateChain } from './x509.js';
 import { checkDidX509, parseDid } from './didx509.js';
 import type { DidDocument, VerificationMethod } from './types.js';
 
@@ -76,6 +80,13 @@ export function getDidX509Resolver(): { x509: DIDResolver } {
 
       try {
         const chain = loadX509Chain(x509chain);
+
+        // Full cryptographic verification MUST run on this path. Skipping it
+        // would let any chain whose predicates match resolve without
+        // signature, validity-period, or basic-constraints checks.
+        const skipValidityPeriodCheck = options['skipValidityPeriodCheck'] === true;
+        await verifyCertificateChain(chain, skipValidityPeriodCheck);
+
         const decodedChain = chain.map(c => decodeCertificate(c));
         const didDocumentId = checkDidX509(did, decodedChain);
 

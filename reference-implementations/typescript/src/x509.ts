@@ -354,11 +354,12 @@ export async function verifyCertificateIssuedBy(
   const issuerPublicKey = await issuer.publicKey.export();
 
   // X.509 certificates store ECDSA signatures in DER format, but Web Crypto
-  // expects raw r||s (IEEE P1363) format. Detect and convert if needed.
-  let signatureBytes = cert.signature;
-  const sigArray = new Uint8Array(cert.signature);
-  if (sigArray[0] === 0x30) {
-    // DER SEQUENCE tag - this is a DER-encoded ECDSA signature
+  // expects raw r||s (IEEE P1363) format. Branch on the certificate's declared
+  // signature algorithm rather than sniffing signature bytes: RSA signature
+  // values are random-looking byte strings that can begin with 0x30 (~1/256),
+  // which the byte heuristic misclassified as DER ECDSA and corrupted.
+  let signatureBytes: ArrayBuffer = cert.signature;
+  if (cert.signatureAlgorithm?.name === 'ECDSA') {
     signatureBytes = derToRawEcdsaSignature(cert.signature);
   }
 
