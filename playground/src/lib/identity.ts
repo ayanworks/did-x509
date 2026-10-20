@@ -44,6 +44,25 @@ export interface DidX509Identity {
   caCertificate: X509Certificate;
 }
 
+/**
+ * The minimal contract a credential signer needs.
+ *
+ * Both a generated identity and an uploaded one satisfy this shape, which is
+ * what lets one signing path serve both. An uploaded chain without a private
+ * key cannot sign, so `leafPrivateJwk` is optional here; callers check for it
+ * before signing rather than being handed an identity that cannot sign.
+ */
+export interface SigningIdentity {
+  did: string;
+  x509chain: string;
+  pemChain: string;
+  leafPublicJwk: JsonWebKey;
+  leafPrivateJwk?: JsonWebKey;
+  verificationMethodId: string;
+  leafCertificate: X509Certificate;
+  caCertificate: X509Certificate;
+}
+
 export type DemoCurve = 'P-256' | 'Ed25519';
 
 export async function createIdentity(
