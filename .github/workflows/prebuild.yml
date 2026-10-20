@@ -1,0 +1,212 @@
+name: Prebuild & Publish
+
+# Builds the redistributable native binaries for every supported platform,
+# assembles them into the npm tarball, and (on version tags) publishes
+# @didx509/native to npm with provenance.
+#
+# Notes:
+# - All binaries link OpenSSL statically (DIDX509_STATIC_OPENSSL=1) so end
+#   users never need OpenSSL installed and never pick up an old system copy.
+# - Linux jobs build a pinned OpenSSL from source: Ubuntu 22.04 ships 3.0
+#   and didx509cpp requires >= 3.3.
+# - Prebuild file names follow node-gyp-build's convention:
+#   prebuilds/<platform>-<arch>/node.napi.node (untagged = glibc)
+#   prebuilds/<platform>-<arch>/node.napi.musl.node (Alpine)
+# - Linux builds run on ubuntu-22.04 so the binaries keep a glibc 2.35
+#   baseline instead of inheriting ubuntu-latest's newer glibc.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENSSL_VERSION: '3.6.5'
+
+jobs:
+  prebuild:
+    name: Prebuild ${{ matrix.tag }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            tag: darwin-arm64
+          - os: macos-15-intel
+            tag: darwin-x64
+          - os: ubuntu-22.04
+            tag: linux-x64
+          - os: ubuntu-22.04-arm
+            tag: linux-arm64
+          - os: windows-latest
+            tag: win32-x64
+    env:
+      DIDX509_STATIC_OPENSSL: '1'
+      CMAKE_OSX_DEPLOYMENT_TARGET: '10.15' # ignored off macOS
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache OpenSSL
+        if: runner.os != 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: reference-implementations/typescript-native/.openssl
+          key: openssl-${{ env.OPENSSL_VERSION }}-prebuild-${{ matrix.os }}-${{ runner.arch }}
+
+      - name: Build OpenSSL from source (static)
+        if: runner.os != 'macOS'
+        shell: bash
+        working-directory: reference-implementations/typescript-native
+        run: node scripts/build-openssl.cjs
+
+      - name: Build addon and dist
+        shell: bash
+        working-directory: reference-implementations/typescript-native
+        run: |
+          npm ci
+          npm run build
+
+      - name: Smoke test (resolve a specification vector)
+        shell: bash
+        working-directory: reference-implementations/typescript-native
+        run: node scripts/runtime-smoke.mjs
+
+      - name: Stage prebuild
+        shell: bash
+        run: |
+          mkdir -p prebuild-artifact/${{ matrix.tag }}
+          cp reference-implementations/typescript-native/build/Release/didx509_native.node \
+             prebuild-artifact/${{ matrix.tag }}/node.napi.node
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.tag }}
+          path: prebuild-artifact/
+          if-no-files-found: error
+          retention-days: 5
+
+  prebuild-musl:
+    name: Prebuild linux-x64-musl
+    runs-on: ubuntu-latest
+    env:
+      DIDX509_STATIC_OPENSSL: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Alpine needs its own toolchain (musl libc), so build inside Docker
+      # rather than on the host runner. actions/checkout still runs on the
+      # host, which avoids the known problem of JavaScript actions inside
+      # Alpine containers.
+      - name: Build inside Alpine
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE":/src -w /src \
+            -e DIDX509_STATIC_OPENSSL=1 node:22-alpine sh -euxc '
+              apk add --no-cache cmake make g++ perl linux-headers git py3
+              cd reference-implementations/typescript-native
+              node scripts/build-openssl.cjs
+              npm ci
+              npm run build
+              node scripts/runtime-smoke.mjs
+              mkdir -p /src/prebuild-artifact/linux-x64
+              cp build/Release/didx509_native.node \
+                 /src/prebuild-artifact/linux-x64/node.napi.musl.node
+            '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-linux-x64-musl
+          path: prebuild-artifact/
+          if-no-files-found: error
+          retention-days: 5
+
+  package:
+    name: Assemble npm package
+    needs: [prebuild, prebuild-musl]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prebuild-*
+          path: reference-implementations/typescript-native/prebuilds
+          merge-multiple: true
+
+      - name: Verify the prebuild set
+        working-directory: reference-implementations/typescript-native
+        run: |
+          ls -R prebuilds
+          test -f prebuilds/darwin-arm64/node.napi.node
+          test -f prebuilds/darwin-x64/node.napi.node
+          test -f prebuilds/linux-x64/node.napi.node
+          test -f prebuilds/linux-x64/node.napi.musl.node
+          test -f prebuilds/linux-arm64/node.napi.node
+          test -f prebuilds/win32-x64/node.napi.node
+
+      - name: Install dependencies (skip source build) and build dist
+        working-directory: reference-implementations/typescript-native
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      # Runs the full 220-vector suite against the *assembled* linux-x64
+      # prebuild through dist/, proving the packaged layout works end to end.
+      - name: Smoke test assembled package
+        working-directory: reference-implementations/typescript-native
+        run: node scripts/runtime-smoke.mjs
+
+      - name: Pack
+        working-directory: reference-implementations/typescript-native
+        run: |
+          npm pack
+          ls -la ./*.tgz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: reference-implementations/typescript-native/*.tgz
+          if-no-files-found: error
+
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: reference-implementations/typescript-native
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $expected"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: reference-implementations/typescript-native
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

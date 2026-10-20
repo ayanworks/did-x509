@@ -1,0 +1,3 @@
+[submodule "reference-implementations/typescript-native/third_party/didx509cpp"]
+	path = reference-implementations/typescript-native/third_party/didx509cpp
+	url = https://github.com/microsoft/didx509cpp.git
