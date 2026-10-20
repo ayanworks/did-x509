@@ -42,7 +42,7 @@ function printResult(result: {
 
 const results = await runAll();
 
-console.log('did:x509 playground — all flows (Deno)');
+console.log('AYANWORKS · did:x509 playground — all flows (Deno)');
 for (const result of results) {
   printResult(result);
 }
