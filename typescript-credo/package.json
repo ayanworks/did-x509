@@ -1,0 +1,86 @@
+{
+  "name": "@didx509/credo",
+  "version": "0.1.0",
+  "description": "did:x509 method registry for credo-ts — resolve did:x509 DIDs in Credo agents",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ test/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "@didx509/core": "file:../typescript"
+  },
+  "peerDependencies": {
+    "@credo-ts/core": "^0.7.0",
+    "@didx509/native": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@didx509/native": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@credo-ts/core": "0.7.2",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^5.0.5",
+    "eslint": "^9.39.5",
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  },
+  "keywords": [
+    "did",
+    "x509",
+    "did:x509",
+    "credo",
+    "credo-ts",
+    "decentralized-identifiers",
+    "pki",
+    "certificate",
+    "verifiable-credentials",
+    "resolver"
+  ],
+  "author": "AyanWorks <engineering@ayanworks.com>",
+  "contributors": [
+    {
+      "name": "AyanWorks",
+      "url": "https://github.com/ayanworks"
+    }
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayanworks/did-x509",
+    "directory": "typescript-credo"
+  },
+  "bugs": {
+    "url": "https://github.com/ayanworks/did-x509/issues"
+  },
+  "homepage": "https://github.com/ayanworks/did-x509#readme"
+}

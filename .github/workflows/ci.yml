@@ -42,6 +42,49 @@ jobs:
       run: npm run build
       working-directory: typescript
 
+  typescript-credo:
+    name: Credo Module Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Build @didx509/core (linked package dependency)
+      shell: bash
+      working-directory: typescript
+      run: |
+        npm ci
+        npm run build
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: typescript-credo
+      run: npm ci
+
+    - name: Typecheck and lint
+      shell: bash
+      working-directory: typescript-credo
+      run: |
+        npm run typecheck
+        npm run lint
+
+    - name: Test (spec vectors through Credo DidDocument)
+      shell: bash
+      working-directory: typescript-credo
+      run: npm test
+
+    - name: Build and pack the package
+      shell: bash
+      working-directory: typescript-credo
+      run: |
+        npm run build
+        npm pack --dry-run
+
   typescript-native:
     name: Native TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
