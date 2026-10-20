@@ -237,6 +237,14 @@ const urls = [
 
   if (process.platform === 'win32') {
     const winArgs = [...commonArgs];
+    // Every cl.exe invocation writes debug info into one shared PDB
+    // (/Zi /Fdossl_static.pdb). Serial nmake never collides, but parallel
+    // jom makes concurrent cl.exe instances fight over it and fail with
+    // C1041 ("cannot open program database ... use /FS"). /FS serialises
+    // PDB writes through a mutex — MSVC's own prescription — for a small
+    // cost against a ~3x shorter build. Configure routes any
+    // slash-prefixed argument straight into CFLAGS.
+    winArgs.push('/FS');
     if (!findInPath('nasm')) {
       // Not every runner ships NASM; Configure without assembly still
       // produces a correct (just less optimized) libcrypto.
