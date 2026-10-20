@@ -20,6 +20,7 @@ import { FLOWS, runAll, type FlowName, type FlowResult } from './flows.ts';
 import { STUDIO_SCRIPT } from './studio-script.ts';
 import {
   credentialCatalogue,
+  capabilityMatrix,
   generateOptions,
   identityFromRequest,
   studioGenerate,
@@ -137,7 +138,11 @@ export async function handleRequest(request: Request): Promise<Response> {
   // The catalogue and options are static; the four operations each take a thin
   // JSON body. Nothing is retained between requests.
   if (path === '/api/catalogue' && request.method === 'GET') {
-    return json({ credentials: credentialCatalogue(), options: generateOptions() });
+    return json({
+      credentials: credentialCatalogue(),
+      options: generateOptions(),
+      capabilityMatrix: capabilityMatrix(),
+    });
   }
 
   if (path === '/api/generate' && request.method === 'POST') {
@@ -594,6 +599,29 @@ const HTML = `<!doctype html>
   /* De-emphasised text, e.g. withheld claims in the verification detail. */
   .muted { color: var(--muted); }
 
+  /* Capability matrix -------------------------------------------------- */
+  /* A collapsible reference table: out of the way until wanted, but one click
+     from the key-type form it explains. */
+  .matrix { margin: 0 0 1.5rem; border: 1px solid var(--line-soft); border-radius: .5rem; background: rgba(255,255,255,.02); }
+  .matrix > summary { cursor: pointer; list-style: none; padding: .7rem .9rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; }
+  .matrix > summary::-webkit-details-marker { display: none; }
+  .matrix > summary::before { content: "▸"; color: var(--gold-400); font-size: .8rem; }
+  .matrix[open] > summary::before { content: "▾"; }
+  .matrix-title { font-weight: 600; font-size: .92rem; }
+  .matrix-body { padding: 0 .9rem 1rem; overflow-x: auto; }
+  table.caps { border-collapse: collapse; width: 100%; font-size: .82rem; }
+  table.caps th, table.caps td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  table.caps th { color: var(--muted); font-weight: 600; font-size: .74rem; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  table.caps td.key { white-space: nowrap; }
+  table.caps td.key b { font-weight: 600; }
+  table.caps td.key small { display: block; color: var(--muted); font-size: .74rem; }
+  /* A per-cell verdict pill, with the algorithm named when it works. */
+  .cap { display: inline-block; font-size: .72rem; font-weight: 700; padding: .14rem .4rem; border-radius: .3rem; white-space: nowrap; }
+  .cap.yes { background: rgba(16, 185, 129, .16); color: #4ade80; }
+  .cap.no { background: rgba(220, 66, 39, .14); color: #fca5a5; }
+  .cap.spec { background: rgba(255, 255, 255, .06); color: var(--muted); }
+  .cap-why { display: block; color: var(--muted); font-size: .74rem; margin-top: .25rem; max-width: 24rem; }
+
   /* Footer ------------------------------------------------------------- */
   footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line); font-size: .84rem; color: var(--muted); }
   footer p { margin: 0 0 .5rem; }
@@ -635,6 +663,19 @@ const HTML = `<!doctype html>
     credential, then verify it and recover the issuer from the credential itself.
     Parsing is per-request: nothing you paste is stored.
   </p>
+
+  <!-- capability matrix --------------------------------------------------- -->
+  <details class="matrix" id="capability-matrix">
+    <summary>
+      <span class="matrix-title">Which key type signs which credential format</span>
+      <span class="note" style="margin:0">signing algorithms, per spec and as implemented</span>
+    </summary>
+    <div class="matrix-body" id="capability-matrix-body">
+      <p class="note" style="margin:0 0 .8rem">
+        Loading…
+      </p>
+    </div>
+  </details>
 
   <!-- 1 ------------------------------------------------------------------ -->
   <div class="step" id="step-1" data-done="false">

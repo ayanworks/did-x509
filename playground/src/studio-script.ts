@@ -24,7 +24,7 @@ export const STUDIO_SCRIPT = String.raw`
 
   // The last loaded identity, held client-side only.
   let identity = null;
-  let catalogue = { credentials: [], options: { algorithms: [], subjectAttributes: [] } };
+  let catalogue = { credentials: [], options: { algorithms: [], subjectAttributes: [] }, capabilityMatrix: null };
   let signed = null;
 
   async function api(path, body) {
@@ -162,13 +162,57 @@ export const STUDIO_SCRIPT = String.raw`
     if (formats.length === 0) {
       select.innerHTML = '<option value="">— none —</option>';
       $('btn-sign').disabled = true;
-      // Say *why*: the key type, not the credential, is the blocker.
-      $('vc-hint').innerHTML = 'This identity\u2019s key (' + esc(identity.keyType || '?')
-        + ') cannot sign any format offered for this credential.';
+      // Say *why*, and distinguish the two possible reasons. "The spec does not
+      // allow this key type" and "our COSE library cannot carry this key" are
+      // different problems with different fixes, so the hint names which one.
+      const keyType = identity.keyType || (identity.leafPublicJwk && identity.leafPublicJwk.kty) || '?';
+      const offered = template.formats
+        .map(f => capabilityNote(keyType, f))
+        .filter(Boolean);
+      $('vc-hint').innerHTML = 'This identity\u2019s key (' + esc(keyType)
+        + ') cannot sign any format offered for this credential.'
+        + (offered.length ? ' ' + esc(offered[0]) : '');
       return;
     }
     $('btn-sign').disabled = false;
     populateClaims();
+  }
+
+  /**
+   * The reason a key type cannot sign a format, if the matrix has one.
+   *
+   * Reads the same data the capability table renders, so the inline hint and
+   * the reference table always agree.
+   */
+  function capabilityNote(keyType, format) {
+    const matrix = catalogue.capabilityMatrix;
+    if (!matrix) return '';
+    const row = matrix.rows.find(r => r.genAlgorithm === keyType);
+    if (!row) return '';
+    const cell = row.cells.find(c => c.format === format);
+    return cell && cell.why ? cell.why : '';
+  }
+
+  /** Render the capability matrix: which key type signs which format. */
+  function renderCapabilityMatrix() {
+    const matrix = catalogue.capabilityMatrix;
+    const host = $('capability-matrix-body');
+    if (!host || !matrix) return;
+    const head = '<tr><th>Key type</th>'
+      + matrix.formats.map(f => '<th>' + esc(f.id) + '</th>').join('')
+      + '</tr>';
+    const rows = matrix.rows.map(row =>
+      '<tr><td class="key"><b>' + esc(row.label) + '</b><small>' + esc(row.description) + '</small></td>'
+      + row.cells.map(cell =>
+          '<td><span class="cap ' + (cell.verdict === 'yes' ? 'yes' : cell.verdict === 'spec' ? 'spec' : 'no') + '">'
+          + esc(cell.label) + '</span>'
+          + (cell.why ? '<span class="cap-why">' + esc(cell.why) + '</span>' : '')
+          + '</td>').join('')
+      + '</tr>').join('');
+    const notes = matrix.formats.map(f =>
+      '<p class="note" style="margin:.4rem 0 0"><b>' + esc(f.id)
+      + '</b> — allowed by spec: <code>' + esc(f.spec) + '</code>. ' + esc(f.note) + '</p>').join('');
+    host.innerHTML = '<table class="caps">' + head + rows + '</table>' + notes;
   }
 
   function populateClaims() {
@@ -632,6 +676,8 @@ export const STUDIO_SCRIPT = String.raw`
       $('up-attr').innerHTML = attrOptions;
       $('vc-template').innerHTML = catalogue.credentials.map(c =>
         '<option value="' + c.id + '">' + esc(c.label) + '</option>').join('');
+
+      renderCapabilityMatrix();
 
       // Ask the server whether the Credo Agent can run here, so the tab shows
       // either the flow or an explanation rather than failing on click.

@@ -44,6 +44,11 @@ import {
   type SubjectInput,
 } from './lib/generate.ts';
 import type { CertificateView } from './lib/cert-parse.ts';
+import {
+  FORMAT_ALGORITHMS,
+  KEY_PROFILES,
+  availabilityOf,
+} from './lib/capabilities.ts';
 import type { SigningIdentity } from './lib/identity.ts';
 import {
   parseUploadedIdentity,
@@ -86,17 +91,32 @@ export interface IdentityReport {
   warnings: string[];
 }
 
-/** Which formats an identity's leaf key can sign, by key type. */
-export function signableFormatsFor(identity: SigningIdentity): CredentialFormat[] {
+/**
+ * Which formats an identity's leaf key can sign.
+ *
+ * Delegated to the signers themselves rather than a key-type table here: an
+ * earlier inline version drifted out of sync with (and understated) what
+ * `sign-mdoc.ts` and `sign-sd-jwt.ts` can do, which is what produced the
+ * "cannot sign any format" dead end for RSA and P-384/P-521 keys.
+ *
+ * The predicates are imported lazily, and `supports*` is a pure function of the
+ * JWK, so this stays cheap to call on every request without dragging the
+ * Digital Bazaar stack into a page that only resolves a DID.
+ */
+export async function signableFormatsFor(
+  identity: SigningIdentity
+): Promise<CredentialFormat[]> {
+  const [jsonld, sdJwt, mdoc] = await Promise.all([
+    import('./sign-jsonld.ts'),
+    import('./sign-sd-jwt.ts'),
+    import('./sign-mdoc.ts'),
+  ]);
   const formats: CredentialFormat[] = [];
-  const { kty, crv } = identity.leafPublicJwk;
-
-  // EDSA-RDFC-2022 is Ed25519-only; SD-JWT and mDoc here are ES256-only.
-  if (kty === 'OKP' && crv === 'Ed25519') formats.push('jsonld');
-  if (kty === 'EC' && crv === 'P-256') formats.push('sd-jwt', 'mdoc');
+  if (jsonld.supportsJsonLd(identity)) formats.push('jsonld');
+  if (sdJwt.supportsSdJwt(identity)) formats.push('sd-jwt');
+  if (mdoc.supportsMdoc(identity)) formats.push('mdoc');
   return formats;
 }
-
 /** Serialise an already-built identity for the UI. */
 async function report(
   identity: SigningIdentity & {
@@ -129,7 +149,7 @@ async function report(
     keyType: identity.keyType,
     keyFormat: identity.keyFormat,
     didSubjectAttribute: identity.didSubjectAttribute ?? 'CN',
-    signableFormats: signableFormatsFor(identity),
+    signableFormats: await signableFormatsFor(identity),
     didDocument,
     warnings: identity.warnings ?? [],
   };
@@ -321,8 +341,68 @@ export function credentialCatalogue(): Array<
   }));
 }
 
-/** Supported key algorithms and subject fields, for the generate form. */
-export function generateOptions(): {
+/**
+ * The capability matrix, as data for the page.
+ *
+ * Built from `lib/capabilities.ts` rather than hard-coded in markup, so the
+ * table the reader studies and the dropdown that actually gates signing cannot
+ * disagree. Each cell carries the algorithm when it works, and the *reason* when
+ * it does not — a reader deciding on a key type needs to know whether the limit
+ * is the specification or this playground's COSE library.
+ */
+export function capabilityMatrix(): {
+  formats: Array<{ id: CredentialFormat; spec: string; note: string }>;
+  rows: Array<{
+    genAlgorithm: string;
+    label: string;
+    description: string;
+    cells: Array<{
+      format: CredentialFormat;
+      verdict: 'yes' | 'no' | 'spec';
+      label: string;
+      why: string;
+    }>;
+  }>;
+} {
+  const formats: CredentialFormat[] = ['jsonld', 'sd-jwt', 'mdoc'];
+  return {
+    formats: formats.map(format => ({
+      id: format,
+      // "allowed" is the spec list; showing it makes the implementation gap
+      // legible instead of looking like an arbitrary "no".
+      spec: FORMAT_ALGORITHMS[format].spec.join(', '),
+      note: FORMAT_ALGORITHMS[format].note,
+    })),
+    rows: KEY_PROFILES.map(profile => ({
+      genAlgorithm: profile.genAlgorithm,
+      label: profile.label,
+      description: profile.description,
+      cells: formats.map(format => {
+        const availability = availabilityOf(profile.genAlgorithm, format);
+        if (availability.state === 'available') {
+          return {
+            format,
+            verdict: 'yes' as const,
+            label: availability.algorithm,
+            why: '',
+          };
+        }
+        // `spec-excluded` is the format's own rule; anything else is our limit.
+        return {
+          format,
+          verdict:
+            availability.state === 'spec-excluded'
+              ? ('spec' as const)
+              : ('no' as const),
+          label: availability.state === 'spec-excluded' ? 'n/a' : 'not available',
+          why: availability.reason,
+        };
+      }),
+    })),
+  };
+}
+
+/** Supported key algorithms and subject fields, for the generate form. */export function generateOptions(): {
   algorithms: GenAlgorithm[];
   subjectAttributes: SubjectAttribute[];
   exampleSubjects: { ca: string; leaf: string };
