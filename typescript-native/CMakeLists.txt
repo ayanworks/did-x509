@@ -82,7 +82,7 @@ find_path(NODE_ADDON_API_INCLUDE_DIR napi.h
   PATHS
     "${NODE_ADDON_API_INCLUDE}"
     "${CMAKE_SOURCE_DIR}/node_modules/node-addon-api"
-    "${CMAKE_SOURCE_DIR}/../../node_modules/node-addon-api"
+    "${CMAKE_SOURCE_DIR}/../node_modules/node-addon-api"
   NO_DEFAULT_PATH
 )
 if(NOT NODE_ADDON_API_INCLUDE_DIR)

@@ -37,6 +37,12 @@ sudo apt install cmake build-essential
 # vcpkg or the official installer), then set OPENSSL_ROOT_DIR.
 ```
 
+If you build OpenSSL from source with `scripts/build-openssl.cjs` on
+Windows, install [jom](https://download.qt.io/official_releases/jom/)
+first (`choco install jom`): it is a drop-in parallel nmake, and the
+script prefers it when it is on PATH. Without jom the build falls back
+to the serial nmake, which takes roughly 12 minutes instead of 4.
+
 ### Pointing at a custom OpenSSL
 
 If CMake picks up the wrong OpenSSL (or none), set `OPENSSL_ROOT_DIR`:

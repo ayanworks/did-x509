@@ -58,7 +58,7 @@ disagree with upstream when the spec evolves.
 
 ## Decision
 
-Build **`@didx509/native`** (`reference-implementations/typescript-native/`)
+Build **`@didx509/native`** (`typescript-native/`)
 as a thin wrapper around a git-submodule-pinned `didx509cpp`:
 
 - **Binding:** Node-API (N-API v8) addon via `node-addon-api`, built with

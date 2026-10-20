@@ -4,7 +4,7 @@ Thank you for your interest in contributing to the did-x509 reference implementa
 
 ## About This Repository
 
-This repository provides reference implementations for the [did:x509](https://www.w3.org/TR/did-x509/) specification in Python and TypeScript. It was originally created by Microsoft and is maintained as an open-source project with contributions from the community, including the TypeScript implementation contributed by [AyanWorks](https://ayanworks.com).
+This repository provides reference implementations for the [did:x509](https://www.w3.org/TR/did-x509/) specification in TypeScript. It was originally created by Microsoft and is maintained as an open-source project with contributions from the community, including the TypeScript implementations contributed by [AyanWorks](https://ayanworks.com).
 
 ## How to Contribute
 
@@ -26,18 +26,10 @@ If you find a bug or have a feature request, please [open an issue](../../issues
 
 ### Development Setup
 
-#### Python
-
-```bash
-cd reference-implementations/python
-pip install -r requirements.txt
-pytest test.py -v
-```
-
 #### TypeScript
 
 ```bash
-cd reference-implementations/typescript
+cd typescript
 npm install
 npm run typecheck
 npm test
