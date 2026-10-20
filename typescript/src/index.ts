@@ -30,6 +30,9 @@ export {
   getKeyUsage,
 } from './x509.js';
 
+// Runtime capability probe (Node built-ins)
+export { getNodeCrypto } from './node-crypto.js';
+
 // Encoding utilities
 export {
   b64url,

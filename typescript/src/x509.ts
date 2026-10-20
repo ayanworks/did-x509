@@ -12,6 +12,7 @@ import {
 import * as asn1js from 'asn1js';
 import pkijs from 'pkijs';
 import { b64url, b64urlDecode, oidToLabel } from './encoding.js';
+import { getNodeCrypto } from './node-crypto.js';
 import type {
   CertificateFingerprint,
   CertificateExtensions,
@@ -53,18 +54,6 @@ function getWebCrypto(): Crypto {
   throw new Error(
     'Web Crypto API not available. Ensure crypto.subtle is accessible in your runtime.'
   );
-}
-
-/**
- * Get Node.js crypto for synchronous operations.
- */
-function getNodeCrypto(): typeof import('node:crypto') | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('node:crypto');
-  } catch {
-    return null;
-  }
 }
 
 /**
