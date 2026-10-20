@@ -142,6 +142,37 @@ jobs:
       working-directory: examples
       run: npm run all
 
+  playground:
+    name: Playground Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
+    - name: Build @didx509/core (import-mapped package dependency)
+      shell: bash
+      working-directory: typescript
+      run: |
+        npm ci
+        npm run build
+
+    - name: Type-check the playground
+      shell: bash
+      working-directory: playground
+      run: deno task check
+
+    - name: Run every flow (resolve, JSON-LD VC, SD-JWT VC, mDoc)
+      shell: bash
+      working-directory: playground
+      run: deno task all
+
   typescript-native:
     name: Native TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

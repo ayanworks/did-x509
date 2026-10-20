@@ -30,7 +30,7 @@ export interface DidX509JsonWebKey {
   /** The DID. */
   controller: string;
   /** The certificate's public key. */
-  publicKeyJwk: Record<string, unknown>;
+  publicKeyJwk: JsonWebKey;
 }
 
 export interface DidX509Ed25519KeyPair
