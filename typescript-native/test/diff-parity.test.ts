@@ -45,7 +45,7 @@ try {
 if (!core && requireCore) {
   throw new Error(
     '@didx509/core could not be imported. Build it first:\n' +
-      '  cd reference-implementations/typescript && npm ci && npm run build'
+      '  cd typescript && npm ci && npm run build'
   );
 }
 

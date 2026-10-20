@@ -29,7 +29,7 @@ If you find a bug or have a feature request, please [open an issue](../../issues
 #### TypeScript
 
 ```bash
-cd reference-implementations/typescript
+cd typescript
 npm install
 npm run typecheck
 npm test

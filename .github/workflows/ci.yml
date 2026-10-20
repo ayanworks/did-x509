@@ -25,19 +25,19 @@ jobs:
 
     - name: Install dependencies
       run: npm ci
-      working-directory: reference-implementations/typescript
+      working-directory: typescript
 
     - name: Typecheck
       run: npm run typecheck
-      working-directory: reference-implementations/typescript
+      working-directory: typescript
 
     - name: Run tests
       run: npm test
-      working-directory: reference-implementations/typescript
+      working-directory: typescript
 
     - name: Build
       run: npm run build
-      working-directory: reference-implementations/typescript
+      working-directory: typescript
 
   typescript-native:
     name: Native TypeScript Tests (${{ matrix.os }})
@@ -72,42 +72,42 @@ jobs:
       if: runner.os != 'macOS'
       uses: actions/cache@v4
       with:
-        path: reference-implementations/typescript-native/.openssl
+        path: typescript-native/.openssl
         key: openssl-3.6.5-${{ runner.os }}-${{ runner.arch }}
 
     - name: Build OpenSSL from source
       if: runner.os != 'macOS'
       shell: bash
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: node scripts/build-openssl.cjs
 
     - name: Build @didx509/core (cross-parity suite dependency)
       shell: bash
-      working-directory: reference-implementations/typescript
+      working-directory: typescript
       run: |
         npm ci
         npm run build
 
     - name: Install @didx509/native (compiles the addon)
       shell: bash
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: npm ci
 
     - name: Typecheck and lint
       shell: bash
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: |
         npm run typecheck
         npm run lint
 
     - name: Test (220 upstream vectors, parity, API, plugin)
       shell: bash
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: REQUIRE_CORE=true npm test
 
     - name: Build and smoke-test the package
       shell: bash
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: |
         npm run build
         node scripts/runtime-smoke.mjs
@@ -128,15 +128,15 @@ jobs:
     - name: Cache OpenSSL
       uses: actions/cache@v4
       with:
-        path: reference-implementations/typescript-native/.openssl
+        path: typescript-native/.openssl
         key: openssl-3.6.5-${{ runner.os }}-${{ runner.arch }}
 
     - name: Build OpenSSL from source
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: node scripts/build-openssl.cjs
 
     - name: Install and build
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: |
         npm ci
         npm run build
@@ -146,7 +146,7 @@ jobs:
         bun-version: latest
 
     - name: Resolve a vector under Bun
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: bun scripts/runtime-smoke.mjs
 
   typescript-native-deno:
@@ -167,15 +167,15 @@ jobs:
     - name: Cache OpenSSL
       uses: actions/cache@v4
       with:
-        path: reference-implementations/typescript-native/.openssl
+        path: typescript-native/.openssl
         key: openssl-3.6.5-${{ runner.os }}-${{ runner.arch }}
 
     - name: Build OpenSSL from source
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: node scripts/build-openssl.cjs
 
     - name: Install and build
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       run: |
         npm ci
         npm run build
@@ -185,7 +185,7 @@ jobs:
         deno-version: v2.x
 
     - name: Resolve a vector under Deno
-      working-directory: reference-implementations/typescript-native
+      working-directory: typescript-native
       # No --node-modules-dir: the smoke imports only dist/ + node: built-ins
       # and the FFI addon. Letting Deno's npm resolver install the dev tree
       # trips its 24h minimum-dependency-age gate (refuses just-published
