@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { parseDid, checkDidX509, resolveDidFromPem, convertChain } from '../src/didx509.js';
+import { parseDid, resolveDidFromPem, convertChain } from '../src/didx509.js';
 import { loadPemCertificateChain } from '../src/x509.js';
 
 const TEST_DATA_DIR = resolve(import.meta.dirname, '../shared-test-data');

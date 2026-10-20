@@ -14,7 +14,6 @@ import pkijs from 'pkijs';
 import { b64url, b64urlDecode, oidToLabel } from './encoding.js';
 import { getNodeCrypto } from './node-crypto.js';
 import type {
-  CertificateFingerprint,
   CertificateExtensions,
   CertificateName,
   DecodedCertificate,

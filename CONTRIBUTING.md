@@ -47,6 +47,20 @@ npm run build
 
 When contributing, please ensure all files include proper attribution headers as described in the repository's licensing. The TypeScript implementation includes AyanWorks attribution in every source file header — maintain this convention when adding new files.
 
+### Releasing
+
+Each npm package versions independently and publishes from its own tag:
+
+| Package | Directory | Tag | Workflow |
+| --- | --- | --- | --- |
+| `@didx509/core` | `typescript/` | `core-v0.1.0` | [`publish.yml`](.github/workflows/publish.yml) |
+| `@didx509/credo` | `typescript-credo/` | `credo-v0.1.0` | [`publish.yml`](.github/workflows/publish.yml) |
+| `@didx509/native` | `typescript-native/` | `native-v0.1.0` | [`prebuild.yml`](.github/workflows/prebuild.yml) |
+
+Bump the version in the package's `package.json`, merge that to `main`, then push the matching tag. The workflow fails if the tag and the manifest version disagree, so a mistyped tag cannot publish a surprise. `@didx509/credo` depends on `@didx509/core`, so publish `core` first.
+
+Publishing needs an `NPM_TOKEN` repository secret (used for `npm publish --provenance`).
+
 ## Code of Conduct
 
 This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Please read it before participating.

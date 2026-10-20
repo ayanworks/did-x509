@@ -2,7 +2,7 @@
 // Original did:x509 specification by Microsoft Corporation.
 
 import { describe, it, expect } from 'vitest';
-import { resolveDidFromPem, convertChain } from '../src/didx509.js';
+import { resolveDidFromPem } from '../src/didx509.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
