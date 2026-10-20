@@ -48,6 +48,7 @@ import {
   FORMAT_ALGORITHMS,
   KEY_PROFILES,
   availabilityOf,
+  credoKeySupportFor,
 } from './lib/capabilities.ts';
 import type { SigningIdentity } from './lib/identity.ts';
 import {
@@ -356,6 +357,8 @@ export function capabilityMatrix(): {
     genAlgorithm: string;
     label: string;
     description: string;
+    /** Whether the Credo (Askar-backed) flow can import this key. */
+    credo: { supported: boolean; reason: string };
     cells: Array<{
       format: CredentialFormat;
       verdict: 'yes' | 'no' | 'spec';
@@ -373,11 +376,14 @@ export function capabilityMatrix(): {
       spec: FORMAT_ALGORITHMS[format].spec.join(', '),
       note: FORMAT_ALGORITHMS[format].note,
     })),
-    rows: KEY_PROFILES.map(profile => ({
-      genAlgorithm: profile.genAlgorithm,
-      label: profile.label,
-      description: profile.description,
-      cells: formats.map(format => {
+    rows: KEY_PROFILES.map(profile => {
+      const credo = credoKeySupportFor(profile.genAlgorithm);
+      return {
+        genAlgorithm: profile.genAlgorithm,
+        label: profile.label,
+        description: profile.description,
+        credo: { supported: credo.supported, reason: credo.reason ?? '' },
+        cells: formats.map(format => {
         const availability = availabilityOf(profile.genAlgorithm, format);
         if (availability.state === 'available') {
           return {
@@ -398,11 +404,13 @@ export function capabilityMatrix(): {
           why: availability.reason,
         };
       }),
-    })),
+      };
+    }),
   };
 }
 
-/** Supported key algorithms and subject fields, for the generate form. */export function generateOptions(): {
+/** Supported key algorithms and subject fields, for the generate form. */
+export function generateOptions(): {
   algorithms: GenAlgorithm[];
   subjectAttributes: SubjectAttribute[];
   exampleSubjects: { ca: string; leaf: string };

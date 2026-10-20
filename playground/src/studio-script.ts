@@ -200,7 +200,7 @@ export const STUDIO_SCRIPT = String.raw`
     if (!host || !matrix) return;
     const head = '<tr><th>Key type</th>'
       + matrix.formats.map(f => '<th>' + esc(f.id) + '</th>').join('')
-      + '</tr>';
+      + '<th>Credo / Askar</th></tr>';
     const rows = matrix.rows.map(row =>
       '<tr><td class="key"><b>' + esc(row.label) + '</b><small>' + esc(row.description) + '</small></td>'
       + row.cells.map(cell =>
@@ -208,10 +208,19 @@ export const STUDIO_SCRIPT = String.raw`
           + esc(cell.label) + '</span>'
           + (cell.why ? '<span class="cap-why">' + esc(cell.why) + '</span>' : '')
           + '</td>').join('')
+      // The Credo column answers a different question from the format columns:
+      // not "can this be signed" but "can Askar hold this key at all".
+      + '<td><span class="cap ' + (row.credo.supported ? 'yes' : 'no') + '">'
+      + (row.credo.supported ? 'supported' : 'unsupported') + '</span>'
+      + (row.credo.reason ? '<span class="cap-why">' + esc(row.credo.reason) + '</span>' : '')
+      + '</td>'
       + '</tr>').join('');
     const notes = matrix.formats.map(f =>
       '<p class="note" style="margin:.4rem 0 0"><b>' + esc(f.id)
-      + '</b> — allowed by spec: <code>' + esc(f.spec) + '</code>. ' + esc(f.note) + '</p>').join('');
+      + '</b> — allowed by spec: <code>' + esc(f.spec) + '</code>. ' + esc(f.note) + '</p>').join('')
+      + '<p class="note" style="margin:.6rem 0 0"><b>Credo / Askar</b> — the Credo flow imports the '
+      + 'private key into an Askar wallet, which accepts only EC (P-256, P-384) and OKP (Ed25519) keys. '
+      + 'The Certificate Studio signs in-process, so it is not bound by this.</p>';
     host.innerHTML = '<table class="caps">' + head + rows + '</table>' + notes;
   }
 
@@ -444,15 +453,57 @@ export const STUDIO_SCRIPT = String.raw`
       note.textContent = 'Load a chain in the Certificate Studio tab to begin.';
       return;
     }
+    const canSign = Boolean(identity.keyPresent);
+
+    // The Credo flow hands the key to Askar, which is far pickier than the
+    // Studio's in-process signing. Check the key type first: a P-521 or RSA
+    // chain is perfectly fine for the Studio but cannot enter the wallet, and
+    // saying so here is better than failing partway through step 3.
+    const credoSupport = credoSupportFor();
+    if (credoSupport && !credoSupport.supported) {
+      pill.className = 'pill bad';
+      pill.textContent = 'key not supported by Credo';
+      note.innerHTML = '<code>' + esc(identity.did) + '</code> — '
+        + esc(credoSupport.reason)
+        + ' Switch to the <b>Certificate Studio</b> tab to sign with this key;'
+        + ' the Credo tab needs P-256, P-384 or Ed25519.';
+      $('btn-credo-run').disabled = true;
+      return;
+    }
+
     pill.className = 'pill ok';
     pill.textContent = 'chain loaded';
-    const canSign = Boolean(identity.keyPresent);
     note.innerHTML = '<code>' + esc(identity.did) + '</code>'
       + (canSign
           ? ' — with its leaf private key, so all seven steps can run.'
           : ' — <b>no private key</b>, so the key import and signing steps cannot run. '
             + 'Upload the key, or use <b>Generate test CA</b> in the Studio.');
     $('btn-credo-run').disabled = !canSign || credoRunning;
+  }
+
+  /**
+   * The Credo compatibility entry for the loaded identity, from the matrix.
+   *
+   * Prefers the leaf JWK over the display label: a generated identity reports
+   * "RSA-2048" while an uploaded one reports something like "EC P-521", so
+   * matching on the JWK's kty/crv gives one answer for both paths.
+   */
+  function credoSupportFor() {
+    const matrix = catalogue.capabilityMatrix;
+    if (!matrix || !identity) return null;
+    const jwk = identity.leafPublicJwk;
+    const keyType = identity.keyType || '';
+    const row = matrix.rows.find(r => {
+      if (jwk && jwk.kty) {
+        // Match on the harvested JWK first — it is the same fact the crypto
+        // layer will act on, unlike the human-readable label.
+        const label = r.label || '';
+        if (jwk.kty === 'RSA') return label.startsWith('RSA');
+        if (jwk.crv) return label.indexOf(jwk.crv) !== -1;
+      }
+      return r.genAlgorithm === keyType;
+    });
+    return row ? row.credo : null;
   }
 
   function credoIdentityPayload() {

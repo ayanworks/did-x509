@@ -130,8 +130,7 @@ export function keyProfileFor(identity: {
   );
 }
 
-/** Why a format is or is not available for a given key. */
-export type FormatAvailability =
+/** Why a format is or is not available for a given key. */export type FormatAvailability =
   /** The key can sign this format today. */
   | { state: 'available'; algorithm: SigningAlgorithm }
   /** The spec allows it, but our dependency does not implement it. */
@@ -272,3 +271,61 @@ export function availabilityOf(
 export function formatSummary(format: FormatName): string {
   return FORMAT_ALGORITHMS[format].note;
 }
+
+/* -------------------------------------------------------------------------
+ * Credo / Askar compatibility
+ *
+ * A separate question from "what can this playground sign". The Studio signs
+ * in-process with Web Crypto, which handles essentially any key Web Crypto can
+ * import. The Credo flow instead hands the private key to **Askar**, through
+ * Credo's KMS, and Askar's key support is much narrower.
+ *
+ * Read from `@credo-ts/askar`'s own `AskarKeyManagementService`:
+ *
+ *   - `isOperationSupported` accepts `importKey` only when `kty` is `EC` or
+ *     `OKP` **and** the curve appears in `jwkCrvToAskarAlg`. Anything else
+ *     returns false, which is why an RSA import fails at the KMS registry with
+ *     "No key management service backend found that supports 'importKey'".
+ *   - `jwkCrvToAskarAlg` covers secp256k1, P-256, P-384, X25519 and Ed25519.
+ *     P-521 is absent.
+ *   - `algToSigType` covers EdDSA, ES256K, ES256 and ES384 — so even if a
+ *     P-521 key were importable, there would be no ES512 to sign with.
+ *
+ * This is an upstream limit, not our wiring, so it is surfaced rather than
+ * worked around: the Studio keeps the full key range and the Credo tab says
+ * plainly which keys it cannot take and why.
+ * ---------------------------------------------------------------------- */
+
+/** Whether the Credo (Askar-backed) flow can import and use a key type. */
+export interface CredoKeySupport {
+  supported: boolean;
+  /** A short explanation, present when `supported` is false. */
+  reason?: string;
+}
+
+/** The key types Askar's KMS accepts, as `GenAlgorithm` values. */
+const ASKAR_SUPPORTED_KEYS = new Set(['P-256', 'P-384', 'Ed25519']);
+
+/** Explain whether the Credo flow can use a generated key type. */
+export function credoKeySupportFor(genAlgorithm: string): CredoKeySupport {
+  if (ASKAR_SUPPORTED_KEYS.has(genAlgorithm)) return { supported: true };
+  if (genAlgorithm === 'P-521') {
+    return {
+      supported: false,
+      reason:
+        'Askar (the wallet backing the Credo flow) has no P-521 support — P-521 is missing from its curve list, and it offers no ES512 signing. The Certificate Studio still signs P-521 credentials locally.',
+    };
+  }
+  if (genAlgorithm.startsWith('RSA')) {
+    return {
+      supported: false,
+      reason:
+        'Askar (the wallet backing the Credo flow) cannot hold RSA keys — its KMS accepts only EC and OKP key types. The Certificate Studio still signs RSA credentials locally, using SD-JWT.',
+    };
+  }
+  return {
+    supported: false,
+    reason: `Askar (the wallet backing the Credo flow) has no support for the ${genAlgorithm} key type.`,
+  };
+}
+
