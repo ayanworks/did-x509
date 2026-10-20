@@ -29,6 +29,7 @@ See [specification.md](specification.md).
 |----------|-----------|----------|
 | TypeScript (pure TS) | [AyanWorks](https://github.com/ayanworks) | [`typescript/`](typescript/) |
 | TypeScript (native, wraps Microsoft's C++) | [AyanWorks](https://github.com/ayanworks) | [`typescript-native/`](typescript-native/) |
+| TypeScript (credo-ts module) | [AyanWorks](https://github.com/ayanworks) | [`typescript-credo/`](typescript-credo/) |
 
 ### TypeScript (@didx509/core)
 
@@ -70,6 +71,48 @@ const doc = await resolveDidFromPem(did, pemChain);
 - **[Package README](typescript-native/README.md)** — Overview, platform support, quick start
 - **[Migration from @didx509/core](typescript-native/docs/migration.md)** — Including the generated list of known behaviour differences (19 cases where `@didx509/core` accepts chains the C++ resolver rejects)
 - **[Architecture](typescript-native/docs/architecture.md)** — How the wrapper works and how parity is tested
+
+### TypeScript, credo-ts module (@didx509/credo)
+
+Use `did:x509` inside a [credo-ts](https://credo.js.org) agent. The resolver plugs into `DidsModule`, so any part of the framework that resolves DIDs — including the verification helpers used when signing and verifying credentials — can work with certificate-backed identities.
+
+```typescript
+import { Agent, DidsModule } from '@credo-ts/core';
+import { X509DidResolver } from '@didx509/credo';
+
+const agent = new Agent({
+  config: { /* ... */ },
+  modules: {
+    dids: new DidsModule({ resolvers: [new X509DidResolver()] }),
+  },
+});
+
+// Resolve with the issuer's certificate chain supplied out-of-band.
+const result = await agent.dids.resolve(did, { x509chain });
+```
+
+Resolution runs on `@didx509/core` by default, or on the native `@didx509/native` addon when it is installed (selectable with `implementation: 'auto' | 'native' | 'core'`).
+
+- **[Package README](typescript-credo/README.md)** — Wiring, resolver options, and caveats
+
+## Usage examples
+
+Runnable end-to-end examples live in [`examples/`](examples/) — each one generates a throwaway CA + leaf certificate chain, derives the `did:x509` DID, and then uses it:
+
+```bash
+cd examples
+npm install
+npm run all
+```
+
+| Script | Run | What it shows |
+|--------|-----|---------------|
+| [`01-resolve.ts`](examples/01-resolve.ts) | `npm run resolve` | Resolving a DID directly and through the `did-resolver` plugin |
+| [`02-jsonld.ts`](examples/02-jsonld.ts) | `npm run sign:jsonld` | Issuing and verifying a JSON-LD Verifiable Credential (Data Integrity, `eddsa-rdfc-2022`) |
+| [`03-sd-jwt.ts`](examples/03-sd-jwt.ts) | `npm run sign:sd-jwt` | Issuing and verifying an SD-JWT VC (ES256) with selective disclosure |
+| [`04-mdoc.ts`](examples/04-mdoc.ts) | `npm run sign:mdoc` | Issuing and verifying an mDoc (ISO/IEC 18013-5) with the certificate in the `x5chain` |
+
+See [`examples/README.md`](examples/README.md) for a walkthrough of each.
 
 ## Contributing
 
