@@ -27,7 +27,6 @@ See [specification.md](specification.md).
 
 | Language | Maintainer | Location |
 |----------|-----------|----------|
-| Python | Microsoft (original) | [`reference-implementations/python/`](reference-implementations/python/) |
 | TypeScript (pure TS) | [AyanWorks](https://github.com/ayanworks) | [`reference-implementations/typescript/`](reference-implementations/typescript/) |
 | TypeScript (native, wraps Microsoft's C++) | [AyanWorks](https://github.com/ayanworks) | [`reference-implementations/typescript-native/`](reference-implementations/typescript-native/) |
 
@@ -71,19 +70,6 @@ const doc = await resolveDidFromPem(did, pemChain);
 - **[Package README](reference-implementations/typescript-native/README.md)** — Overview, platform support, quick start
 - **[Migration from @didx509/core](reference-implementations/typescript-native/docs/migration.md)** — Including the generated list of known behaviour differences (19 cases where `@didx509/core` accepts chains the C++ resolver rejects)
 - **[Architecture](reference-implementations/typescript-native/docs/architecture.md)** — How the wrapper works and how parity is tested
-
-### Python
-
-```bash
-cd reference-implementations/python
-pip install -r requirements.txt
-pytest -v test.py
-```
-
-```bash
-python -m didx509 resolve "did:x509:0:sha256:hH32p4SXlD8n_HLrk_mmNzIKArVh0KkbCeh6eAftfGE::subject:CN:Microsoft%20Corporation" \
-  --chain test-data/ms-code-signing.pem --skip-validity-period-check
-```
 
 ## Contributing
 
