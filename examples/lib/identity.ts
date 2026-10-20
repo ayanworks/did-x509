@@ -31,9 +31,9 @@ export interface DidX509Identity {
   /** PEM certificates, leaf first. */
   pemChain: string;
   /** Public JWK of the leaf key — appears as `publicKeyJwk` in the DID document. */
-  leafPublicJwk: Record<string, unknown>;
+  leafPublicJwk: JsonWebKey;
   /** Private JWK of the leaf key — signs credentials in the examples. */
-  leafPrivateJwk: Record<string, unknown>;
+  leafPrivateJwk: JsonWebKey;
   /** Verification method id in the DID document (`${did}#0`). */
   verificationMethodId: string;
   leafCertificate: X509Certificate;
@@ -56,14 +56,14 @@ export async function createIdentity(
       ? ('Ed25519' as const)
       : ({ name: 'ECDSA', namedCurve: 'P-256' } as const);
 
-  const caKeys = await crypto.subtle.generateKey(algorithm, true, [
+  const caKeys = (await crypto.subtle.generateKey(algorithm, true, [
     'sign',
     'verify',
-  ]);
-  const leafKeys = await crypto.subtle.generateKey(algorithm, true, [
+  ])) as CryptoKeyPair;
+  const leafKeys = (await crypto.subtle.generateKey(algorithm, true, [
     'sign',
     'verify',
-  ]);
+  ])) as CryptoKeyPair;
 
   // `C` is present because ISO 18013-5 issuer-auth validation requires the
   // document signer's subject to carry a country name.
