@@ -8,6 +8,9 @@ on:
     paths-ignore:
       - '**.md'
   pull_request:
+    # labeled/unlabeled re-trigger CI so adding the `ci:full` label opts the
+    # PR into the macOS/Windows legs, and removing it drops back to Ubuntu.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths-ignore:
       - '**.md'
   workflow_dispatch:
@@ -45,7 +48,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Ubuntu is the default everywhere: fast (~31 s) and reliable.
+        # macOS/Windows run only when explicitly requested — the `ci:full`
+        # label on a PR, pushes to main, or a manual workflow_dispatch — so
+        # hosted-runner capacity outages (15 min queue timeouts) can't hold
+        # up ordinary PR checks.
+        os: >-
+          ${{ fromJSON(
+          (github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:full')))
+          && '["ubuntu-latest","macos-latest","windows-latest"]'
+          || '["ubuntu-latest"]') }}
     steps:
     - uses: actions/checkout@v4
       with:
