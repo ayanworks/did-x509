@@ -28,7 +28,8 @@ See [specification.md](specification.md).
 | Language | Maintainer | Location |
 |----------|-----------|----------|
 | Python | Microsoft (original) | [`reference-implementations/python/`](reference-implementations/python/) |
-| TypeScript | [AyanWorks](https://github.com/ayanworks) | [`reference-implementations/typescript/`](reference-implementations/typescript/) |
+| TypeScript (pure TS) | [AyanWorks](https://github.com/ayanworks) | [`reference-implementations/typescript/`](reference-implementations/typescript/) |
+| TypeScript (native, wraps Microsoft's C++) | [AyanWorks](https://github.com/ayanworks) | [`reference-implementations/typescript-native/`](reference-implementations/typescript-native/) |
 
 ### TypeScript (@didx509/core)
 
@@ -50,6 +51,26 @@ console.log(doc.verificationMethod[0].publicKeyJwk);
 - **[Practical Guide](reference-implementations/typescript/docs/practical-guide.md)** — Cert-to-DID extraction, issuing, verifying, trust registries
 - **[Getting Started](reference-implementations/typescript/docs/getting-started.md)** — Installation and basic usage
 - **[API Reference](reference-implementations/typescript/docs/api-reference.md)** — Complete function signatures and types
+
+### TypeScript, native (@didx509/native)
+
+Same API as `@didx509/core`, but every resolution runs inside Microsoft's C++ reference implementation (`didx509cpp`) through a Node-API addon — identical behaviour to the reference, verified against all 220 official test vectors on every CI build. For Node.js, Electron, Bun, and Deno; browsers and React Native keep using `@didx509/core`.
+
+```bash
+cd reference-implementations/typescript-native
+npm install
+REQUIRE_CORE=true npm test
+```
+
+```typescript
+import { resolveDidFromPem } from '@didx509/native';
+
+const doc = await resolveDidFromPem(did, pemChain);
+```
+
+- **[Package README](reference-implementations/typescript-native/README.md)** — Overview, platform support, quick start
+- **[Migration from @didx509/core](reference-implementations/typescript-native/docs/migration.md)** — Including the generated list of known behaviour differences (19 cases where `@didx509/core` accepts chains the C++ resolver rejects)
+- **[Architecture](reference-implementations/typescript-native/docs/architecture.md)** — How the wrapper works and how parity is tested
 
 ### Python
 

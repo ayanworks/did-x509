@@ -1,0 +1,102 @@
+{
+  "name": "@didx509/native",
+  "version": "0.1.0",
+  "description": "Native TypeScript binding for the did:x509 DID method, powered by Microsoft's didx509cpp resolver",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "prebuilds",
+    "shim",
+    "native",
+    "scripts/install.cjs",
+    "CMakeLists.txt",
+    "DIDX509CPP_COMMIT",
+    "third_party/didx509cpp/didx509cpp.h",
+    "third_party/didx509cpp/LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "install": "node scripts/install.cjs",
+    "build:native": "node scripts/install.cjs --force",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "parity:report": "UPDATE_CORE_DIVERGENCES=true vitest run test/diff-parity.test.ts",
+    "sync:commit": "git -C third_party/didx509cpp rev-parse HEAD > DIDX509CPP_COMMIT",
+    "lint": "eslint src/ test/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "cmake-js": "^8.0.0",
+    "node-addon-api": "^8.9.2",
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "@didx509/core": "file:../typescript",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^5.0.5",
+    "did-resolver": "^5.0.1",
+    "eslint": "^9.39.5",
+    "reflect-metadata": "^0.2.2",
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  },
+  "peerDependencies": {
+    "did-resolver": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "did-resolver": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "did",
+    "x509",
+    "did:x509",
+    "decentralized-identifiers",
+    "pki",
+    "certificate",
+    "verifiable-credentials",
+    "native",
+    "resolver"
+  ],
+  "author": "AyanWorks <engineering@ayanworks.com>",
+  "contributors": [
+    {
+      "name": "AyanWorks",
+      "url": "https://github.com/ayanworks"
+    }
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayanworks/did-x509",
+    "directory": "reference-implementations/typescript-native"
+  },
+  "bugs": {
+    "url": "https://github.com/ayanworks/did-x509/issues"
+  },
+  "homepage": "https://github.com/ayanworks/did-x509#readme"
+}
