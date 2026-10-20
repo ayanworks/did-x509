@@ -5,8 +5,8 @@
 // vector, and checks the result. Run after `npm run build`:
 //
 //   bun scripts/runtime-smoke.mjs
-//   deno run --allow-ffi --allow-read --allow-env \
-//       --node-modules-dir=auto scripts/runtime-smoke.mjs
+//   deno run --allow-ffi --allow-read --allow-env --allow-sys \
+//       scripts/runtime-smoke.mjs
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

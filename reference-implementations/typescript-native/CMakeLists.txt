@@ -12,6 +12,21 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Release")
 
+# Multi-config generators (Visual Studio, Xcode) append the configuration
+# name to the output directories above, producing build/Release/<Config> —
+# which node-gyp-build does not look in. Pin every configuration to
+# build/Release explicitly. (No-op for single-config generators such as
+# Makefiles and Ninja: CMAKE_CONFIGURATION_TYPES is empty there.)
+foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
+  string(TOUPPER "${config}" config_upper)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper}
+    "${CMAKE_BINARY_DIR}/Release")
+  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper}
+    "${CMAKE_BINARY_DIR}/Release")
+  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper}
+    "${CMAKE_BINARY_DIR}/Release")
+endforeach()
+
 option(DIDX509_STATIC_OPENSSL
   "Prefer static OpenSSL libraries (required for redistributable prebuilds)" OFF)
 

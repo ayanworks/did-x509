@@ -43,6 +43,9 @@ function run(command, args, options) {
     stdio: ['ignore', 'inherit', 'inherit'],
     ...options,
   });
+  if (result.error) {
+    fail(`${command} failed to launch: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     fail(`${command} ${args.join(' ')} failed (exit ${result.status})`);
   }
@@ -77,6 +80,67 @@ function findPerl() {
     }
   }
   return findInPath('perl') || 'perl';
+}
+
+// Windows: locate vcvarsall.bat (VS 2022+ layout) so we can bootstrap the
+// MSVC toolchain explicitly. ilammy/msvc-dev-cmd already sets this env on CI,
+// but sourcing it ourselves keeps source builds working on plain shells too.
+function findVcvarsall() {
+  const vswhere =
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+  if (existsSync(vswhere)) {
+    const found = spawnSync(
+      vswhere,
+      ['-latest', '-products', '*', '-requires',
+        'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+        '-property', 'installationPath'],
+      { encoding: 'utf8' }
+    ).stdout?.trim();
+    if (found) {
+      const candidate = path.join(found, 'VC', 'Auxiliary', 'Build',
+        'vcvarsall.bat');
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return findInPath('vcvarsall.bat');
+}
+
+// Windows: Git for Windows ships a POSIX `link` (coreutils) in usr\bin that
+// shadows MSVC's link.exe, so OpenSSL's nmake dies with "link: extra operand
+// '/dll'" when it shells out. Running the build through cmd.exe with the
+// MSVC dev environment ensures cl.exe/link.exe/lib.exe resolve correctly.
+function msvcNmake(vcvarsall, nmakeArgs, cwd) {
+  const args = Array.isArray(nmakeArgs) ? nmakeArgs : String(nmakeArgs).split(/\s+/).filter(Boolean);
+  // Prefer the nmake that ships with the same MSVC install as vcvarsall
+  // (VCINSTALLDIR is set by ilammy/msvc-dev-cmd on CI); fall back to PATH so
+  // plain shells still work. This avoids grabbing a non-MSVC nmake that may
+  // sit earlier on PATH.
+  let nmake = null;
+  if (process.env.VCINSTALLDIR) {
+    const candidate = path.join(
+      process.env.VCINSTALLDIR, 'Tools', 'MSVC',
+      process.env.VCToolsVersion || '', 'bin', 'HostX64', 'x64', 'nmake.exe'
+    );
+    if (existsSync(candidate)) nmake = candidate;
+  }
+  if (!nmake) nmake = findInPath('nmake.exe');
+  if (!vcvarsall || !nmake) {
+    fail('could not locate vcvarsall.bat or nmake.exe for the MSVC toolchain');
+  }
+  const tail = args.length ? ` ${args.join(' ')}` : '';
+  const command = `call "${vcvarsall}" x64 >nul && "${nmake}"${tail}`;
+  // windowsVerbatimArguments is essential: without it libuv assembles the
+  // command line itself and escapes inner quotes as \" — which cmd.exe does
+  // not understand (it treats the backslashes literally), so the quoted
+  // paths end up as literal '"...\vcvarsall.bat\"' filenames and are not
+  // found. Verbatim mode passes our string through untouched, so cmd sees
+  // exactly `call "C:\...\vcvarsall.bat" x64 >nul && "C:\...\nmake.exe"`.
+  // Full path to cmd.exe: spawnSync does not resolve it from PATH reliably.
+  const cmd = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
+  run(cmd, ['/d', '/s', '/c', command], {
+    cwd,
+    windowsVerbatimArguments: true,
+  });
 }
 
 const prefix = parsePrefix();
@@ -153,8 +217,11 @@ const urls = [
       winArgs.push('no-asm');
     }
     run(findPerl(), ['Configure', 'VC-WIN64A', ...winArgs], { cwd: sourceDir });
-    run('nmake', [], { cwd: sourceDir });
-    run('nmake', ['install_sw'], { cwd: sourceDir });
+    // Build via cmd.exe + vcvarsall: Git Bash's POSIX `link` (coreutils)
+    // otherwise shadows MSVC's link.exe and OpenSSL's nmake link step fails.
+    const vcvarsall = findVcvarsall();
+    msvcNmake(vcvarsall, [], sourceDir);
+    msvcNmake(vcvarsall, ['install_sw'], sourceDir);
   } else {
     // ./config auto-detects the platform (linux-x86_64, darwin64-*,
     // linux-aarch64, ...). Cross builds can override with OPENSSL_TARGET.

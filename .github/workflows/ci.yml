@@ -197,6 +197,10 @@ jobs:
 
     - name: Resolve a vector under Deno
       working-directory: reference-implementations/typescript-native
+      # No --node-modules-dir: the smoke imports only dist/ + node: built-ins
+      # and the FFI addon. Letting Deno's npm resolver install the dev tree
+      # trips its 24h minimum-dependency-age gate (refuses just-published
+      # devDeps like typescript-eslint) — and the smoke needs none of them.
       run: >
         deno run --allow-ffi --allow-read --allow-env --allow-sys
-        --node-modules-dir=auto scripts/runtime-smoke.mjs
+        scripts/runtime-smoke.mjs
