@@ -34,6 +34,10 @@ jobs:
       run: npm run typecheck
       working-directory: typescript
 
+    - name: Lint
+      run: npm run lint
+      working-directory: typescript
+
     - name: Run tests
       run: npm test
       working-directory: typescript
@@ -84,6 +88,32 @@ jobs:
       run: |
         npm run build
         npm pack --dry-run
+
+    # The published tarball must carry a semver range for the linked core
+    # package, not the `file:` specifier used for development. This mirrors
+    # the rewrite in the publish workflow.
+    - name: Verify publishable manifest (linked dep rewritten)
+      shell: bash
+      working-directory: typescript-credo
+      run: |
+        core_version="$(node -p "require('../typescript/package.json').version")"
+        node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.dependencies['@didx509/core'] = '^' + process.argv[1];
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+        " "$core_version"
+        npm pack
+        tar -xzOf ./didx509-credo-*.tgz package/package.json > /tmp/packed.json
+        node -e "
+          const packed = require('/tmp/packed.json');
+          const spec = packed.dependencies['@didx509/core'];
+          if (spec !== '^' + process.argv[1]) {
+            console.error('Unexpected @didx509/core spec:', spec);
+            process.exit(1);
+          }
+          console.log('Published @didx509/core spec:', spec);
+        " "$core_version"
 
   examples:
     name: Signing Examples

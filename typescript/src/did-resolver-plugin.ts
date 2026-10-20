@@ -18,7 +18,7 @@
  */
 
 import { loadX509Chain, decodeCertificate, extractPublicKeyAsJwk, getKeyUsage } from './x509.js';
-import { checkDidX509, parseDid } from './didx509.js';
+import { checkDidX509 } from './didx509.js';
 import type { DidDocument, VerificationMethod } from './types.js';
 
 const CID_CONTEXT = 'https://www.w3.org/ns/cid/v1';

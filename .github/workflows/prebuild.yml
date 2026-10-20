@@ -4,6 +4,10 @@ name: Prebuild & Publish
 # assembles them into the npm tarball, and (on version tags) publishes
 # @didx509/native to npm with provenance.
 #
+# Tag scheme: this workflow fires on `native-v*` (e.g. native-v0.1.0), since
+# @didx509/core and @didx509/credo version independently and publish from
+# their own `core-v*` / `credo-v*` tags via publish.yml.
+#
 # Notes:
 # - All binaries link OpenSSL statically (DIDX509_STATIC_OPENSSL=1) so end
 #   users never need OpenSSL installed and never pick up an old system copy.
@@ -18,7 +22,7 @@ name: Prebuild & Publish
 on:
   push:
     tags:
-      - 'v*'
+      - 'native-v*'
   workflow_dispatch:
 
 permissions:
@@ -201,17 +205,17 @@ jobs:
           if-no-files-found: error
 
       - name: Check tag matches package.json version
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/')
         working-directory: typescript-native
         run: |
-          expected="v$(node -p "require('./package.json').version")"
+          expected="native-v$(node -p "require('./package.json').version")"
           if [ "$expected" != "$GITHUB_REF_NAME" ]; then
             echo "Tag $GITHUB_REF_NAME does not match package version $expected"
             exit 1
           fi
 
       - name: Publish to npm
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/native-v')
         working-directory: typescript-native
         run: npm publish --access public --provenance
         env:

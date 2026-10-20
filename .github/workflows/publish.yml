@@ -1,0 +1,141 @@
+name: Publish
+
+# Publishes @didx509/core and @didx509/credo to npm from per-package tags:
+#
+#   core-v0.1.0     -> typescript/
+#   credo-v0.1.0    -> typescript-credo/   (needs core-v<version> published first)
+#   native-v0.1.0   -> typescript-native/  (handled by prebuild.yml)
+#
+# Each package versions independently, so a bare `v*` tag would be ambiguous.
+# The workflow checks that the tag matches the package.json version before
+# publishing, so a mistyped tag fails loudly instead of publishing a surprise.
+#
+# Development keeps `@didx509/core` as a `file:` link so CI and local runs
+# exercise the checkout in this repo. That specifier cannot be published, so
+# the publish job rewrites it to the matching semver range on a throwaway
+# copy of the manifest. The committed package.json and lockfile are untouched.
+
+on:
+  push:
+    tags:
+      - 'core-v*'
+      - 'credo-v*'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - core
+          - credo
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ github.event.inputs.package || (startsWith(github.ref_name, 'credo-') && 'credo' || 'core') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Resolve which package to publish
+        id: target
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.package }}" ]; then
+            pkg="${{ github.event.inputs.package }}"
+          elif [ "${GITHUB_REF_NAME#credo-}" != "$GITHUB_REF_NAME" ]; then
+            pkg="credo"
+          else
+            pkg="core"
+          fi
+          case "$pkg" in
+            core)  dir="typescript" ;;
+            credo) dir="typescript-credo" ;;
+            *) echo "Unknown package: $pkg"; exit 1 ;;
+          esac
+          echo "package=$pkg" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      # On a tag push, the tag version and the manifest version must agree.
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: |
+          expected="${{ steps.target.outputs.package }}-v$(node -p "require('./package.json').version")"
+          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $expected"
+            exit 1
+          fi
+
+      # @didx509/core is a linked workspace-style dependency during
+      # development; CI links it the same way. Build it before the dependent
+      # package so typechecking and tests resolve real types.
+      - name: Build @didx509/core (linked dependency)
+        if: steps.target.outputs.package == 'credo'
+        shell: bash
+        working-directory: typescript
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install dependencies
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: npm ci
+
+      - name: Typecheck, lint, and test
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Build
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: npm run build
+
+      # Publishing rewrites the `file:` link into the semver range the
+      # registry actually understands, using the version in this checkout.
+      - name: Rewrite linked dependency to a semver range
+        if: steps.target.outputs.package == 'credo'
+        shell: bash
+        working-directory: typescript-credo
+        run: |
+          core_version="$(node -p "require('../typescript/package.json').version")"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.dependencies['@didx509/core'] = '^' + process.argv[1];
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          " "$core_version"
+          echo "Rewrote @didx509/core -> ^$core_version"
+          node -p "require('./package.json').dependencies['@didx509/core']"
+
+      - name: Pack and show contents
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: |
+          npm pack
+          ls -la ./*.tgz
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
