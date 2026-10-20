@@ -3,6 +3,8 @@
 //
 // Builds a static OpenSSL from source, for CI machines whose system
 // OpenSSL is too old (didx509cpp requires >= 3.3; Ubuntu 24.04 ships 3.0).
+// On Windows the build prefers jom (parallel nmake) and falls back to
+// serial nmake when jom is not installed.
 //
 // Usage:
 //   node scripts/build-openssl.js [--prefix <dir>]
@@ -53,15 +55,27 @@ function run(command, args, options) {
 
 // Locate an executable on PATH. On Windows, PATH may point at executables
 // whose actual name is lowercase (perl.exe) while PATHEXT says .EXE.
+//
+// The literal name is tried first, then PATHEXT-suffixed variants. This
+// matters because callers may pass an already-qualified name (jom.exe) and
+// standard PATHEXT does not end with ';' — appending extensions blindly
+// would then only ever produce jom.exe.exe, jom.exe.cmd, ... and never
+// match the file that exists.
 function findInPath(name) {
-  const exts =
-    process.platform === 'win32'
-      ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').toLowerCase().split(';')
-      : [''];
+  const variants = [name];
+  if (process.platform === 'win32') {
+    const exts = (process.env.PATHEXT || '.EXE;.CMD;.BAT')
+      .toLowerCase()
+      .split(';')
+      .filter(Boolean);
+    for (const ext of exts) {
+      if (!name.toLowerCase().endsWith(ext)) variants.push(name + ext);
+    }
+  }
   for (const dir of (process.env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
-    for (const ext of exts) {
-      const candidate = path.join(dir, name + ext);
+    for (const variant of variants) {
+      const candidate = path.join(dir, variant);
       if (existsSync(candidate)) return candidate;
     }
   }
@@ -109,8 +123,12 @@ function findVcvarsall() {
 // shadows MSVC's link.exe, so OpenSSL's nmake dies with "link: extra operand
 // '/dll'" when it shells out. Running the build through cmd.exe with the
 // MSVC dev environment ensures cl.exe/link.exe/lib.exe resolve correctly.
-function msvcNmake(vcvarsall, nmakeArgs, cwd) {
-  const args = Array.isArray(nmakeArgs) ? nmakeArgs : String(nmakeArgs).split(/\s+/).filter(Boolean);
+//
+// nmake is single-threaded, which makes the build take ~12 minutes. jom is
+// a drop-in nmake replacement with parallelism (`jom -j<N>`); we prefer it
+// when it is on PATH (CI installs it via chocolatey) and fall back to nmake.
+function msvcMake(vcvarsall, makeArgs, cwd) {
+  const args = Array.isArray(makeArgs) ? makeArgs : String(makeArgs).split(/\s+/).filter(Boolean);
   // Prefer the nmake that ships with the same MSVC install as vcvarsall
   // (VCINSTALLDIR is set by ilammy/msvc-dev-cmd on CI); fall back to PATH so
   // plain shells still work. This avoids grabbing a non-MSVC nmake that may
@@ -127,14 +145,23 @@ function msvcNmake(vcvarsall, nmakeArgs, cwd) {
   if (!vcvarsall || !nmake) {
     fail('could not locate vcvarsall.bat or nmake.exe for the MSVC toolchain');
   }
+  const jom = findInPath('jom.exe') || findInPath('jom.cmd');
+  const jobs = Math.max(1, os.cpus().length);
+  const make = jom ? `"${jom}" -j${jobs}` : `"${nmake}"`;
+  console.log(
+    jom
+      ? `build-openssl: building with jom -j${jobs} (parallel)`
+      : 'build-openssl: jom not found — building with nmake (serial; ' +
+        'install jom for a much faster build)'
+  );
   const tail = args.length ? ` ${args.join(' ')}` : '';
-  const command = `call "${vcvarsall}" x64 >nul && "${nmake}"${tail}`;
+  const command = `call "${vcvarsall}" x64 >nul && ${make}${tail}`;
   // windowsVerbatimArguments is essential: without it libuv assembles the
   // command line itself and escapes inner quotes as \" — which cmd.exe does
   // not understand (it treats the backslashes literally), so the quoted
   // paths end up as literal '"...\vcvarsall.bat\"' filenames and are not
   // found. Verbatim mode passes our string through untouched, so cmd sees
-  // exactly `call "C:\...\vcvarsall.bat" x64 >nul && "C:\...\nmake.exe"`.
+  // exactly `call "C:\...\vcvarsall.bat" x64 >nul && "C:\...\jom.exe" -j4`.
   // Full path to cmd.exe: spawnSync does not resolve it from PATH reliably.
   const cmd = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
   run(cmd, ['/d', '/s', '/c', command], {
@@ -210,6 +237,14 @@ const urls = [
 
   if (process.platform === 'win32') {
     const winArgs = [...commonArgs];
+    // Every cl.exe invocation writes debug info into one shared PDB
+    // (/Zi /Fdossl_static.pdb). Serial nmake never collides, but parallel
+    // jom makes concurrent cl.exe instances fight over it and fail with
+    // C1041 ("cannot open program database ... use /FS"). /FS serialises
+    // PDB writes through a mutex — MSVC's own prescription — for a small
+    // cost against a ~3x shorter build. Configure routes any
+    // slash-prefixed argument straight into CFLAGS.
+    winArgs.push('/FS');
     if (!findInPath('nasm')) {
       // Not every runner ships NASM; Configure without assembly still
       // produces a correct (just less optimized) libcrypto.
@@ -220,8 +255,8 @@ const urls = [
     // Build via cmd.exe + vcvarsall: Git Bash's POSIX `link` (coreutils)
     // otherwise shadows MSVC's link.exe and OpenSSL's nmake link step fails.
     const vcvarsall = findVcvarsall();
-    msvcNmake(vcvarsall, [], sourceDir);
-    msvcNmake(vcvarsall, ['install_sw'], sourceDir);
+    msvcMake(vcvarsall, [], sourceDir);
+    msvcMake(vcvarsall, ['install_sw'], sourceDir);
   } else {
     // ./config auto-detects the platform (linux-x86_64, darwin64-*,
     // linux-aarch64, ...). Cross builds can override with OPENSSL_TARGET.
