@@ -39,21 +39,33 @@ export const STUDIO_SCRIPT = String.raw`
   }
 
   // --- tabs ---------------------------------------------------------------
-  const tabStudio = $('tab-studio'), tabFlows = $('tab-flows');
-  const panelStudio = $('panel-studio'), panelFlows = $('panel-flows');
+  const tabs = {
+    studio: { button: $('tab-studio'), panel: $('panel-studio') },
+    credo: { button: $('tab-credo'), panel: $('panel-credo') },
+    flows: { button: $('tab-flows'), panel: $('panel-flows') },
+  };
   function selectTab(which) {
-    const studio = which === 'studio';
-    tabStudio.setAttribute('aria-selected', String(studio));
-    tabFlows.setAttribute('aria-selected', String(!studio));
-    panelStudio.hidden = !studio;
-    panelFlows.hidden = studio;
+    for (const [name, { button, panel }] of Object.entries(tabs)) {
+      const active = name === which;
+      button.setAttribute('aria-selected', String(active));
+      panel.hidden = !active;
+    }
+    if (which === 'credo') syncCredoSource();
   }
-  tabStudio.addEventListener('click', () => selectTab('studio'));
-  tabFlows.addEventListener('click', () => selectTab('flows'));
+  for (const [name, { button }] of Object.entries(tabs)) {
+    button.addEventListener('click', () => selectTab(name));
+  }
 
   // --- step helpers -------------------------------------------------------
   function setStep(n, state) {
     const el = $('step-' + n);
+    el.dataset.done = state === 'done' ? 'true' : 'false';
+    el.classList.toggle('locked', state === 'locked');
+  }
+
+  /** Same, for the Credo tab's steps, whose ids already carry the prefix. */
+  function setCredoStep(n, state) {
+    const el = $('credo-step-' + n);
     el.dataset.done = state === 'done' ? 'true' : 'false';
     el.classList.toggle('locked', state === 'locked');
   }
@@ -114,6 +126,10 @@ export const STUDIO_SCRIPT = String.raw`
       + '<details class="more"><summary>DID document (' + (next.didDocument.verificationMethod || []).length + ' verification method)</summary>'
       + '<pre>' + esc(JSON.stringify(next.didDocument, null, 2)) + '</pre></details>';
     setStep(3, 'done');
+
+    // A new chain invalidates the Credo tab's loaded source; it re-reads
+    // from here.
+    resetCredo();
 
     // Step 4: only if a key is present.
     if (next.keyPresent) {
@@ -336,6 +352,261 @@ export const STUDIO_SCRIPT = String.raw`
   $('vc-format').addEventListener('change', populateClaims);
   $('btn-sign').addEventListener('click', sign);
 
+  // ========================================================================
+  // Credo flow tab
+  // ========================================================================
+  //
+  // Drives a real Credo Agent on the server. The chain is whatever the
+  // Certificate Studio loaded: the browser holds it and re-sends it, because
+  // the server keeps nothing between requests. The Agent's *wallet*, though,
+  // does persist — keyed by a session cookie — which is why the steps are
+  // separate and why "Reset the wallet" exists.
+
+  let credoAvailable = null;       // null = not asked yet
+  let credoResult = null;          // the last run's full result
+  let credoRunning = false;
+
+  function resetCredo() {
+    credoResult = null;
+    $('btn-credo-verify').disabled = true;
+    // Each step keeps its own "what to do first" line, so the panel reads as a
+    // sequence rather than seven identical placeholders.
+    const pending = {
+      1: 'Load a chain first.',
+      2: 'Run step 1 first.',
+      3: 'Resolve the DID first.',
+      4: 'Import the key first.',
+      5: 'Bind the DID first.',
+      6: 'Check the wallet first.',
+      7: 'Issue a credential first.',
+    };
+    for (let n = 1; n <= 7; n++) {
+      setCredoStep(n, 'locked');
+      const out = $('credo-' + n + '-out');
+      if (out) out.innerHTML = '<p class="note">' + pending[n] + '</p>';
+    }
+    $('credo-run-out').innerHTML = '';
+    $('btn-credo-run').disabled = !identity;
+    syncCredoSource();
+  }
+
+  /** Reflect whether the Studio has a chain the Credo tab can use. */
+  function syncCredoSource() {
+    const pill = $('credo-source-pill');
+    const note = $('credo-source-note');
+    if (!identity) {
+      pill.className = 'pill neutral';
+      pill.textContent = 'no chain loaded';
+      note.textContent = 'Load a chain in the Certificate Studio tab to begin.';
+      return;
+    }
+    pill.className = 'pill ok';
+    pill.textContent = 'chain loaded';
+    const canSign = Boolean(identity.keyPresent);
+    note.innerHTML = '<code>' + esc(identity.did) + '</code>'
+      + (canSign
+          ? ' — with its leaf private key, so all seven steps can run.'
+          : ' — <b>no private key</b>, so the key import and signing steps cannot run. '
+            + 'Upload the key, or use <b>Generate test CA</b> in the Studio.');
+    $('btn-credo-run').disabled = !canSign || credoRunning;
+  }
+
+  function credoIdentityPayload() {
+    return {
+      chainPem: identity.pemChain,
+      keyPem: identity.keyPem ?? identity.uploadedKeyPem ?? '',
+      didSubjectAttribute: identity.didSubjectAttribute,
+    };
+  }
+
+  async function credoStatus() {
+    if (credoAvailable !== null) return credoAvailable;
+    try {
+      const res = await fetch('/api/credo-agent/status');
+      const body = await res.json();
+      credoAvailable = Boolean(body.available);
+    } catch {
+      credoAvailable = false;
+    }
+    $('credo-unavailable').hidden = credoAvailable;
+    $('credo-ready').hidden = !credoAvailable;
+    if (credoAvailable) resetCredo();
+    return credoAvailable;
+  }
+
+  /** Render one step's body from the run result. */
+  function renderCredoSteps(result) {
+    const kv = rows => '<dl class="kv">' + rows.map(([k, v]) =>
+      '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl>';
+
+    // 1 — agent
+    $('credo-1-out').innerHTML =
+      '<div class="row steps-ok"><span class="pill ok">agent initialized</span>'
+      + '<span class="pill ok">' + esc(result.agent.storage) + '</span></div>'
+      + kv([
+          ['Wallet id', result.agent.walletId],
+          ['Storage', result.agent.storage],
+          ['Backend', result.agent.backend],
+        ])
+      + '<p class="note">The wallet is per-browser and in-memory — it disappears when this session ends.</p>';
+    setCredoStep(1, 'done');
+
+    // 2 — resolution
+    const doc = result.resolution.didDocument || {};
+    $('credo-2-out').innerHTML =
+      '<div class="row steps-ok"><span class="pill ok">resolved via Agent</span>'
+      + '<span class="pill ok">' + esc(result.resolution.verificationMethodType) + '</span>'
+      + '<span class="pill ok">engine: ' + esc(result.resolution.implementation) + '</span>'
+      + '<span class="pill ok">no caching</span></div>'
+      + kv([
+          ['DID', result.resolution.did],
+          ['Verification method', result.resolution.verificationMethodId],
+          ['Method type', result.resolution.verificationMethodType],
+        ])
+      + '<details class="more"><summary>Resolved DID document</summary><pre>'
+      + esc(JSON.stringify(doc, null, 2)) + '</pre></details>';
+    setCredoStep(2, 'done');
+
+    // 3 — key import
+    const matches = result.import.keyMatchesCertificate;
+    $('credo-3-out').innerHTML =
+      '<div class="row steps-ok">'
+      + '<span class="pill ' + (matches ? 'ok' : 'bad') + '">'
+      + (matches ? 'wallet key matches the certificate' : 'key mismatch') + '</span></div>'
+      + kv([
+          ['KMS key id', result.import.kmsKeyId],
+          ['Key type', result.import.keyType],
+        ])
+      + '<p class="note">The wallet now holds the certificate\u2019s private key. '
+      + 'It was compared against the certificate\u2019s public key to confirm they are the same key.</p>';
+    setCredoStep(3, 'done');
+
+    // 4 — binding
+    $('credo-4-out').innerHTML =
+      '<div class="row steps-ok"><span class="pill ok">DID + key binding stored</span></div>'
+      + kv([
+          ['DID', result.binding.did],
+          ['Document-relative key id', result.binding.didDocumentRelativeKeyId],
+          ['KMS key id', result.binding.kmsKeyId],
+        ])
+      + '<p class="note">This is the exact pair <code>agent.dids.import</code> writes: '
+      + 'the DID document, plus which wallet key backs its verification method.</p>';
+    setCredoStep(4, 'done');
+
+    // 5 — wallet contents
+    $('credo-5-out').innerHTML =
+      '<div class="row steps-ok"><span class="pill ok">' + result.wallet.dids.length
+      + ' did:x509 ' + (result.wallet.dids.length === 1 ? 'DID' : 'DIDs') + ' in the wallet</span>'
+      + '<span class="pill ok">' + esc(result.wallet.storedKeyType) + '</span></div>'
+      + '<dl class="kv">' + result.wallet.dids.map(d =>
+          '<dt>DID</dt><dd>' + esc(d) + '</dd>').join('') + '</dl>';
+    setCredoStep(5, 'done');
+
+    // 6 — issuance
+    $('credo-6-out').innerHTML =
+      '<div class="row steps-ok"><span class="pill ok">signed by the wallet key</span>'
+      + '<span class="pill ok">chain embedded</span></div>'
+      + kv([
+          ['iss', result.issuance.issuer],
+          ['Key used', result.issuance.keyId],
+        ])
+      + '<div class="field"><label>Signed SD-JWT VC</label><textarea readonly rows="6">'
+      + esc(result.issuance.compact) + '</textarea></div>'
+      + '<p class="note">No key material was sent from the browser — the Agent signed with the '
+      + 'key bound to the DID inside the wallet.</p>';
+    setCredoStep(6, 'done');
+
+    // 7 — verification, on demand
+    $('credo-7-out').innerHTML =
+      '<p class="note">Credential ready. Run the verifier to check it against the re-resolved DID.</p>';
+    setCredoStep(7, 'open');
+    $('btn-credo-verify').disabled = false;
+    $('btn-credo-verify').dataset.ready = 'true';
+  }
+
+  async function runCredoFlow() {
+    if (!identity) { fail('credo-run-out', 'Load a chain in the Certificate Studio tab first.'); return; }
+    if (!identity.keyPresent) {
+      fail('credo-run-out', 'This chain has no private key, so the Credo flow cannot import it.');
+      return;
+    }
+    if (!(await credoStatus())) return;
+
+    credoRunning = true;
+    $('btn-credo-run').disabled = true;
+    $('credo-run-out').innerHTML = '<p class="note">Starting a Credo Agent and running all seven steps…</p>';
+    try {
+      const { result } = await api('/api/credo-agent/run', credoIdentityPayload());
+      credoResult = result;
+      renderCredoSteps(result);
+      $('credo-run-out').innerHTML = '';
+    } catch (e) {
+      fail('credo-run-out', 'Credo flow failed: ' + e.message);
+    } finally {
+      credoRunning = false;
+      $('btn-credo-run').disabled = false;
+    }
+  }
+
+  function renderCredoVerification(result) {
+    const v = result.verification;
+    let html = '<div class="verdict ' + (v.valid ? 'good' : 'bad') + '">'
+      + '<span class="verdict-mark">' + (v.valid ? '✓' : '✕') + '</span>'
+      + '<div><b>' + (v.valid ? 'Credential verified' : 'Verification failed') + '</b>'
+      + '<small>' + esc(v.error
+          ?? (v.valid
+            ? 'The signature is valid: the wallet key signed it and the DID re-resolved from the chain.'
+            : 'The credential did not pass verification.')) + '</small></div></div>';
+
+    const all = Object.entries(v.disclosed ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    html += '<div class="grid-2" style="margin-top:1rem">'
+      + '<div><h3 class="sub" style="margin-top:0">Disclosed</h3>'
+      + '<dl class="kv">' + all.map(([k, val]) =>
+          '<dt>' + esc(k) + '</dt><dd>' + esc(String(val)) + '</dd>').join('') + '</dl></div>'
+      + '<div><h3 class="sub" style="margin-top:0">Withheld</h3>'
+      + (v.withheld.length
+          ? '<dl class="kv">' + v.withheld.map(k =>
+              '<dt>' + esc(k) + '</dt><dd class="muted">not disclosed</dd>').join('') + '</dl>'
+          : '<p class="note">Nothing was withheld.</p>')
+      + '</div></div>'
+      + '<p class="note">The verifier trusts <code>' + esc(v.trustedIssuer)
+      + '</code> and re-resolved it from the certificate chain — the trust anchor is the CA, not this page.</p>'
+      + '<details class="more"><summary>Full verification result</summary><pre>'
+      + esc(JSON.stringify(v, null, 2)) + '</pre></details>';
+
+    $('credo-7-out').innerHTML = html;
+    setCredoStep(7, 'done');
+  }
+
+  $('btn-credo-run').addEventListener('click', runCredoFlow);
+
+  $('btn-credo-verify').addEventListener('click', async () => {
+    if (!credoResult) { fail('credo-7-out', 'Run the flow first.'); return; }
+    setCredoStep(7, 'open');
+    $('btn-credo-verify').disabled = true;
+    $('credo-7-out').innerHTML = '<p class="note">Re-resolving the DID and verifying…</p>';
+    try {
+      renderCredoVerification(credoResult);
+    } catch (e) {
+      fail('credo-7-out', e.message);
+    } finally {
+      $('btn-credo-verify').disabled = false;
+    }
+  });
+
+  $('btn-credo-reset').addEventListener('click', async () => {
+    $('btn-credo-reset').disabled = true;
+    try {
+      await api('/api/credo-agent/reset', {});
+      resetCredo();
+      $('credo-run-out').innerHTML = '<p class="note">Wallet reset. The Agent will be recreated on the next run.</p>';
+    } catch (e) {
+      fail('credo-run-out', e.message);
+    } finally {
+      $('btn-credo-reset').disabled = false;
+    }
+  });
+
   // Step 6 is an explicit action: the verifier decides when to check.
   $('btn-verify').addEventListener('click', () => {
     if (!signed) {
@@ -361,6 +632,12 @@ export const STUDIO_SCRIPT = String.raw`
       $('up-attr').innerHTML = attrOptions;
       $('vc-template').innerHTML = catalogue.credentials.map(c =>
         '<option value="' + c.id + '">' + esc(c.label) + '</option>').join('');
+
+      // Ask the server whether the Credo Agent can run here, so the tab shows
+      // either the flow or an explanation rather than failing on click.
+      $('credo-ready').hidden = true;
+      $('credo-unavailable').hidden = true;
+      await credoStatus();
     } catch (e) {
       fail('step-1-out', 'Could not load the catalogue: ' + e.message);
     }

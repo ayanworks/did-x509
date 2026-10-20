@@ -4,9 +4,13 @@
 /**
  * CLI entry point — runs every flow in-process, with no HTTP server.
  *
- * This is what CI exercises (`deno task all`): it proves the flows work on
- * the Deno runtime without needing a port or a network. Any `npm:` download
- * still happens, so it also catches dependency-resolution regressions.
+ * This is what CI exercises (`npm run all`): it proves the flows work on the
+ * Node runtime without needing a port or a network. Any dependency download
+ * still happens, so it also catches resolution regressions.
+ *
+ * It deliberately does **not** start a Credo Agent: the flows here are the
+ * portable ones. The Agent is exercised by the playground's Credo tab, which
+ * needs a long-lived wallet. See `credo-agent.ts`.
  */
 
 import { runAll } from './flows.ts';
@@ -19,7 +23,7 @@ function printResult(result: {
   did: string;
   details: Record<string, unknown>;
 }): void {
-  const { document, credential, ...rest } = result.details;
+  const { document, credential, didDocument, ...rest } = result.details;
   console.log(`\n▸ ${result.title}`);
   console.log(`  ${result.summary}`);
   console.log(`  did: ${result.did}`);
@@ -29,6 +33,11 @@ function printResult(result: {
   }
   if (document) {
     console.log(`  document: ${JSON.stringify(document).length} bytes`);
+  }
+  if (didDocument) {
+    console.log(
+      `  didDocument: ${JSON.stringify(didDocument).length} bytes (expand in the web UI)`
+    );
   }
   if (credential) {
     console.log(
@@ -42,7 +51,7 @@ function printResult(result: {
 
 const results = await runAll();
 
-console.log('AYANWORKS · did:x509 playground — all flows (Deno)');
+console.log('AYANWORKS · did:x509 playground — all flows (Node)');
 for (const result of results) {
   printResult(result);
 }
@@ -54,9 +63,13 @@ const failures = results.filter(result => {
       ? result.details.verified
       : result.flow === 'sd-jwt'
         ? result.details.verified
-        : result.flow === 'mdoc'
-          ? result.details.issuerAuthVerified
-          : true;
+        : result.flow === 'credo'
+          // A keyless chain resolves but cannot sign; that is a pass, not a
+          // verification failure. The full flow always has a key.
+          ? result.details.canSign === false || result.details.verified
+          : result.flow === 'mdoc'
+            ? result.details.issuerAuthVerified
+            : true;
   return !verified;
 });
 
@@ -65,7 +78,7 @@ if (failures.length > 0) {
   for (const failure of failures) {
     console.error(`  - ${failure.flow}`);
   }
-  Deno.exit(1);
+  process.exit(1);
 }
 
 console.log(`\n✓ all ${results.length} flows verified`);

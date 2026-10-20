@@ -250,6 +250,45 @@ export interface VerifyRequestBody {
 }
 
 /**
+ * Resolve a loaded chain through the Credo resolver, and report what a Credo
+ * wallet would store for it.
+ *
+ * This is the didn't-quite-fit-a-step check for Credo users: it answers "what
+ * does `agent.dids.resolve()` return for *my* certificate?" for an uploaded
+ * chain. It runs the resolver in-process and is portable; the Credo *tab* goes
+ * further and drives a real Agent — see `credo-agent.ts`.
+ */
+export async function studioCredoResolve(request: {
+  chainPem: string;
+  didSubjectAttribute?: SubjectAttribute;
+  /** Which engine behind the resolver to use. */
+  implementation?: 'core' | 'native';
+}): Promise<{
+  did: string;
+  implementation: 'core' | 'native';
+  didDocument: Record<string, unknown>;
+  verificationMethodType: string;
+  allowsCaching: boolean;
+  importedKey: { kmsKeyId: string; didDocumentRelativeKeyId: string };
+}> {
+  const identity = await parseUploadedIdentity(
+    request.chainPem,
+    '',
+    request.didSubjectAttribute ?? 'CN'
+  );
+  const { credoFlow } = await import('./credo.ts');
+  const outcome = await credoFlow(identity, request.implementation ?? 'core');
+  return {
+    did: outcome.did,
+    implementation: outcome.implementation,
+    didDocument: outcome.didDocument,
+    verificationMethodType: outcome.verificationMethodType,
+    allowsCaching: outcome.allowsCaching,
+    importedKey: outcome.importedKey,
+  };
+}
+
+/**
  * Verify a supplied credential and recover its issuer.
  *
  * Nothing about the original signing identity is needed: the chain travels in
@@ -302,5 +341,24 @@ export function generateOptions(): {
 export {
   webCryptoAlgorithm,
   splitCertificates,
+  type SubjectAttribute,
   type X509Certificate,
 };
+
+/**
+ * Turn a posted chain (+ key) into a `SigningIdentity`.
+ *
+ * The Credo tab reuses the Certificate Studio's chain, which the browser holds
+ * and re-sends with every request — nothing is retained server-side.
+ */
+export async function identityFromRequest(request: {
+  chainPem: string;
+  keyPem: string;
+  didSubjectAttribute?: SubjectAttribute;
+}): Promise<SigningIdentity> {
+  return parseUploadedIdentity(
+    request.chainPem,
+    request.keyPem,
+    request.didSubjectAttribute ?? 'CN'
+  );
+}

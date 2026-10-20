@@ -132,10 +132,25 @@ jobs:
         npm ci
         npm run build
 
+    - name: Build @didx509/credo (linked package dependency)
+      shell: bash
+      working-directory: typescript-credo
+      run: |
+        npm ci
+        npm run build
+
     - name: Install dependencies
       shell: bash
       working-directory: examples
-      run: npm ci
+      run: |
+        # Askar (and cbor-extract, koffi) ship native prebuilds behind install
+        # scripts. npm 11+ blocks those by default, and the Askar addon is
+        # required by the Credo example.
+        npm install-scripts approve @openwallet-foundation/askar-nodejs || true
+        npm install-scripts approve cbor-extract || true
+        npm install-scripts approve koffi || true
+        npm ci
+        npm rebuild
 
     - name: Run all examples
       shell: bash
@@ -152,26 +167,57 @@ jobs:
       with:
         node-version: '24'
 
-    - uses: denoland/setup-deno@v2
-      with:
-        deno-version: v2.x
-
-    - name: Build @didx509/core (import-mapped package dependency)
+    - name: Build @didx509/core (file: package dependency)
       shell: bash
       working-directory: typescript
       run: |
         npm ci
         npm run build
 
+    - name: Build @didx509/credo (file: package dependency)
+      shell: bash
+      working-directory: typescript-credo
+      run: |
+        npm ci
+        npm run build
+
+    # Native addons: Askar, cbor-extract and koffi all need their install
+    # scripts to run. npm 11+ blocks those by default, so the approvals are
+    # recorded in package.json's `allowScripts`; the rebuild below is a
+    # belt-and-braces guard in case a cached tree skipped a build step.
+    - name: Install playground dependencies
+      shell: bash
+      working-directory: playground
+      run: |
+        npm install --no-fund --no-audit
+        npm rebuild
+
     - name: Type-check the playground
       shell: bash
       working-directory: playground
-      run: deno task check
+      run: npm run check
 
-    - name: Run every flow (resolve, JSON-LD VC, SD-JWT VC, mDoc)
+    - name: Run every flow (resolve, JSON-LD VC, SD-JWT VC, mDoc, Credo)
       shell: bash
       working-directory: playground
-      run: deno task all
+      run: npm run all
+
+    # The Credo tab needs a real Agent and wallet, which the flow suite does
+    # not start. Boot the server and exercise the seven steps over HTTP, so a
+    # regression in the native path fails here rather than in production.
+    - name: Exercise the Credo Agent over HTTP
+      shell: bash
+      working-directory: playground
+      run: |
+        npm start &
+        SERVER_PID=$!
+        # Wait for the server to answer, then check the native backend loaded.
+        for i in $(seq 1 40); do
+          curl -sf http://localhost:8000/api/health >/dev/null && break
+          sleep 1
+        done
+        npm run smoke:credo
+        kill "$SERVER_PID"
 
   typescript-native:
     name: Native TypeScript Tests (${{ matrix.os }})

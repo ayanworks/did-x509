@@ -2,15 +2,21 @@
 // Original did:x509 specification by Microsoft Corporation.
 
 /**
- * The four did:x509 flows the playground exercises.
+ * The five did:x509 flows the playground exercises.
  *
  * Everything here is runtime-portable: Web Crypto, `@didx509/core`, and the
  * signing stacks. No Deno, Node, or Cloudflare APIs appear in this file, so
  * the same functions back the local CLI, the HTTP server, and any future
- * host. Only the server entry point is host-specific.
+ * host. Only the server entry point and the Credo Agent modules are
+ * host-specific.
  *
  * Each flow starts from a fresh throwaway CA + leaf chain. The demo
  * certificates are generated in memory and never leave the process.
+ *
+ * Note that the `credo` flow here resolves through `@didx509/credo` only — it
+ * does not start an Agent. The full Agent + Askar wallet journey lives in
+ * `credo-agent.ts` and is driven by the Credo tab, because it needs a native
+ * addon that a portable runtime cannot load. `npm run all` stays portable.
  */
 
 import 'reflect-metadata';
@@ -20,7 +26,7 @@ import { createIdentity, type DidX509Identity } from './lib/identity.ts';
 
 export interface FlowResult {
   /** Stable identifier for the flow. */
-  flow: 'resolve' | 'jsonld' | 'sd-jwt' | 'mdoc';
+  flow: 'resolve' | 'jsonld' | 'sd-jwt' | 'mdoc' | 'credo';
   /** Human-readable title. */
   title: string;
   /** One-line summary of what happened. */
@@ -160,6 +166,44 @@ export async function mdocFlow(): Promise<FlowResult> {
   };
 }
 
+/**
+ * Flow 5 — did:x509 through the Credo resolver plugin.
+ *
+ * Resolution and credential issuing both go through the real
+ * `X509DidResolver` and Credo's `DidDocument`, so the playground exercises the
+ * published `@didx509/credo` integration rather than a reimplementation.
+ */
+export async function credoFlow(): Promise<FlowResult> {
+  const identity = await newIdentity();
+  const { credoFlow: runCredo } = await import('./credo.ts');
+
+  const result = await runCredo(identity, 'core');
+
+  return {
+    flow: 'credo',
+    title: 'Credo integration (@didx509/credo)',
+    summary: result.canSign
+      ? result.verified
+        ? 'Resolved the DID through Credo and verified a credential signed under it.'
+        : 'Credo credential verification failed.'
+      : 'Resolved the DID through Credo and produced the wallet import record.',
+    did: result.did,
+    details: {
+      implementation: result.implementation,
+      verificationMethodType: result.verificationMethodType,
+      keyMatchesCertificate: result.keyMatchesCertificate,
+      allowsCaching: result.allowsCaching,
+      importedKey: result.importedKey,
+      disclosed: result.disclosed,
+      withheld: result.withheld,
+      verified: result.verified,
+      canSign: result.canSign,
+      didDocument: result.didDocument,
+      credential: result.credential,
+    },
+  };
+}
+
 /** Run every flow, in order. */
 export async function runAll(): Promise<FlowResult[]> {
   const results: FlowResult[] = [];
@@ -167,6 +211,7 @@ export async function runAll(): Promise<FlowResult[]> {
   results.push(await jsonldFlow());
   results.push(await sdJwtFlow());
   results.push(await mdocFlow());
+  results.push(await credoFlow());
   return results;
 }
 
@@ -176,6 +221,7 @@ export const FLOWS = {
   jsonld: jsonldFlow,
   'sd-jwt': sdJwtFlow,
   mdoc: mdocFlow,
+  credo: credoFlow,
 } as const;
 
 export type FlowName = keyof typeof FLOWS;

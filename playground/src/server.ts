@@ -6,10 +6,14 @@
  *
  * This module is deliberately host-agnostic: it exports a `fetch`-shaped
  * handler and does no I/O of its own beyond calling the flow functions. The
- * Deno entry point (`main.ts`) binds it to `Deno.serve`; a Cloudflare Worker
+ * Node entry point (`main.ts`) binds it to `node:http`; a Cloudflare Worker
  * would bind the same handler to `export default { fetch }`. Keeping the
- * split here is what makes the April 2027 host change a config edit rather
- * than a rewrite.
+ * split here is what makes a host change a config edit rather than a rewrite.
+ *
+ * The Credo Agent routes are the one exception to "host-agnostic": they need
+ * the native Askar addon, so they are loaded lazily and report themselves
+ * unavailable when the addon cannot be imported. Everything else here — and
+ * every credential flow — runs on any runtime.
  */
 
 import { FLOWS, runAll, type FlowName, type FlowResult } from './flows.ts';
@@ -17,10 +21,13 @@ import { STUDIO_SCRIPT } from './studio-script.ts';
 import {
   credentialCatalogue,
   generateOptions,
+  identityFromRequest,
   studioGenerate,
   studioSign,
   studioUpload,
+  studioCredoResolve,
   studioVerify,
+  type SubjectAttribute,
   type GenerateRequest,
   type SignRequestBody,
   type UploadRequest,
@@ -33,12 +40,52 @@ const JSON_HEADERS = {
   'access-control-allow-origin': '*',
 } as const;
 
+/**
+ * Cookie carrying the Credo Agent session id.
+ *
+ * Repeated literally rather than imported from `credo-session.ts`: importing
+ * that module is what loads the native Askar addon, and this file must stay
+ * loadable on hosts that cannot.
+ */
+const SESSION_COOKIE = 'didx509_credo_sid';
+
 /** Wrap a payload in a JSON response. */
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body, null, 2), {
     status,
     headers: JSON_HEADERS,
   });
+}
+
+/**
+ * Read one cookie out of a `Cookie:` header.
+ *
+ * Deliberately minimal — the playground sets exactly one cookie, and pulling in
+ * a cookie parser for that would be more code than the thing it parses.
+ */
+function readCookie(header: string | null, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return rest.join('=');
+  }
+  return undefined;
+}
+
+/**
+ * Whether the Credo Agent can run on this host.
+ *
+ * Cached, because the answer cannot change within a process and the check
+ * itself loads the native addon.
+ */
+let credoAgentSupport: Promise<boolean> | undefined;
+function credoAgentAvailable(): Promise<boolean> {
+  if (!credoAgentSupport) {
+    credoAgentSupport = import('./credo-session.ts').then(module =>
+      module.available()
+    );
+  }
+  return credoAgentSupport;
 }
 
 /** The landing page: a self-contained HTML document (no build step). */
@@ -116,6 +163,67 @@ export async function handleRequest(request: Request): Promise<Response> {
     return serialize(async () =>
       json({ verification: await studioVerify(await body<VerifyRequestBody>(request)) })
     );
+  }
+
+  if (path === '/api/credo-resolve' && request.method === 'POST') {
+    return serialize(async () =>
+      json({
+        resolution: await studioCredoResolve(
+          await body<{
+            chainPem: string;
+            didSubjectAttribute?: SubjectAttribute;
+            implementation?: 'core' | 'native';
+          }>(request)
+        ),
+      })
+    );
+  }
+
+  // --- Credo Agent (Node only) ---------------------------------------------
+  // These routes need the native Askar addon, so they are absent on hosts that
+  // cannot load it. The UI asks `/api/credo-agent/status` first and hides the
+  // tab when the answer is no.
+  if (path === '/api/credo-agent/status' && request.method === 'GET') {
+    return json({ available: await credoAgentAvailable() });
+  }
+
+  if (path === '/api/credo-agent/run' && request.method === 'POST') {
+    const payload = await body<{
+      chainPem: string;
+      keyPem: string;
+      didSubjectAttribute?: SubjectAttribute;
+    }>(request);
+    const sid = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
+    return serialize(async () => {
+      // Parsed inside the guard: a bad chain or a missing key is the caller's
+      // error and should come back as a readable 400, not a crash.
+      const identity = await identityFromRequest(payload);
+      const { runCredoAgent } = await import('./credo-session.ts');
+      const { result, setCookie } = await runCredoAgent(sid, identity);
+      const headers = new Headers(JSON_HEADERS);
+      if (setCookie) headers.append('set-cookie', setCookie);
+      return new Response(JSON.stringify({ result }, null, 2), {
+        status: 200,
+        headers,
+      });
+    });
+  }
+
+  if (path === '/api/credo-agent/reset' && request.method === 'POST') {
+    const sid = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
+    return serialize(async () => {
+      const { endSession } = await import('./credo-session.ts');
+      await endSession(sid);
+      const headers = new Headers(JSON_HEADERS);
+      headers.append(
+        'set-cookie',
+        `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+      );
+      return new Response(JSON.stringify({ ok: true }, null, 2), {
+        status: 200,
+        headers,
+      });
+    });
   }
 
   if (path === '/api/flows' && request.method === 'GET') {
@@ -469,6 +577,23 @@ const HTML = `<!doctype html>
   .error { color: #f87171; }
   .running { color: var(--muted); }
 
+  /* Credo flow --------------------------------------------------------- */
+  .credo-source {
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+    padding: .85rem 1rem; border: 1px solid var(--line-soft); border-radius: var(--radius);
+    background: var(--panel); margin-bottom: 1.25rem;
+  }
+  .credo-source #credo-source-note { flex: 1 1 16rem; }
+  /* A neutral pill, for states that are neither a pass nor a failure. */
+  .pill.neutral { background: rgba(255, 255, 255, .06); color: var(--muted); }
+  /* Pills sit in a row above the key/value detail of each Credo step. */
+  .steps-ok { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .8rem; }
+  .steps-ok .pill + .pill { margin-left: 0; }
+  /* h3.sub labels the disclosed/withheld columns of the verification step. */
+  h3.sub { font-size: .86rem; margin: 0 0 .5rem; color: var(--muted); }
+  /* De-emphasised text, e.g. withheld claims in the verification detail. */
+  .muted { color: var(--muted); }
+
   /* Footer ------------------------------------------------------------- */
   footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line); font-size: .84rem; color: var(--muted); }
   footer p { margin: 0 0 .5rem; }
@@ -494,12 +619,14 @@ const HTML = `<!doctype html>
 <p class="tagline">
   Every run builds a throwaway CA and leaf certificate chain, derives the DID from
   the chain, and signs a credential with the certificate's own key — issued and
-  verified end to end on Web Crypto. Nothing is stored.
+  verified end to end. The Certificate Studio keeps nothing; the Credo flow opens
+  a per-browser wallet in memory that disappears with your session.
 </p>
 
 <div class="tabs" role="tablist">
   <button class="tab" role="tab" id="tab-studio" aria-controls="panel-studio" aria-selected="true">Certificate Studio</button>
-  <button class="tab" role="tab" id="tab-flows" aria-controls="panel-flows" aria-selected="false">Fixed flows</button>
+  <button class="tab" role="tab" id="tab-credo" aria-controls="panel-credo" aria-selected="false">Credo flow</button>
+  <button class="tab" role="tab" id="tab-flows" aria-controls="panel-flows" aria-selected="false">Smoke tests</button>
 </div>
 
 <section id="panel-studio" role="tabpanel" aria-labelledby="tab-studio">
@@ -572,7 +699,9 @@ const HTML = `<!doctype html>
   <div class="step locked" id="step-3" data-done="false">
     <div class="step-head"><span class="step-num">3</span><h2>Derived DID</h2></div>
     <p class="hint">The did:x509 DID falls out of the chain — anchored on the CA fingerprint and the leaf's subject attribute.</p>
-    <div class="body" id="step-3-out"><p class="note">Load a chain first.</p></div>
+    <div class="body">
+      <div id="step-3-out"><p class="note">Load a chain first.</p></div>
+    </div>
   </div>
 
   <!-- 4 + 5 -------------------------------------------------------------- -->
@@ -606,17 +735,105 @@ const HTML = `<!doctype html>
   </div>
 </section>
 
+<section id="panel-credo" role="tabpanel" aria-labelledby="tab-credo" hidden>
+  <p class="note" style="margin:0 0 1rem">
+    The full Credo integration, driven from your browser through a <b>real Credo
+    <code>Agent</code></b> with an <b>Askar wallet</b>. It reuses the chain you
+    loaded in the Certificate Studio — switch to that tab and load one first.
+  </p>
+
+  <div id="credo-unavailable" hidden>
+    <p class="note warn">
+      The Credo Agent needs the native Askar backend, which is unavailable on
+      this host. This playground must be started with Node
+      (<code>npm start</code>) for the Credo flow. The Certificate Studio and the
+      Smoke tests work everywhere.
+    </p>
+  </div>
+
+  <div id="credo-ready">
+    <div class="credo-source" id="credo-source">
+      <span class="pill neutral" id="credo-source-pill">no chain loaded</span>
+      <span class="note" id="credo-source-note" style="margin:0">
+        Load a chain in the Certificate Studio tab to begin.
+      </span>
+    </div>
+
+    <!-- 1 -->
+    <div class="step locked" id="credo-step-1" data-done="false">
+      <div class="step-head"><span class="step-num">1</span><h2>Start a Credo Agent</h2></div>
+      <p class="hint">A real <code>Agent</code> with an in-memory Askar wallet, created for this browser session only.</p>
+      <div class="body"><div id="credo-1-out"><p class="note">Load a chain first.</p></div></div>
+    </div>
+
+    <!-- 2 -->
+    <div class="step locked" id="credo-step-2" data-done="false">
+      <div class="step-head"><span class="step-num">2</span><h2>Resolve the DID through the Agent</h2></div>
+      <p class="hint"><code>agent.dids.resolve(did, { x509chain })</code> — the chain is the trust anchor, so it travels with every call.</p>
+      <div class="body"><div id="credo-2-out"><p class="note">Resolve a chain first.</p></div></div>
+    </div>
+
+    <!-- 3 -->
+    <div class="step locked" id="credo-step-3" data-done="false">
+      <div class="step-head"><span class="step-num">3</span><h2>Import the certificate key</h2></div>
+      <p class="hint">The leaf certificate's private key goes into the Askar wallet; the wallet's copy is compared against the certificate.</p>
+      <div class="body"><div id="credo-3-out"><p class="note">Resolve a chain first.</p></div></div>
+    </div>
+
+    <!-- 4 -->
+    <div class="step locked" id="credo-step-4" data-done="false">
+      <div class="step-head"><span class="step-num">4</span><h2>Bind the DID to the key</h2></div>
+      <p class="hint"><code>agent.dids.import({ did, didDocument, keys })</code> — the DID document now names a key the wallet holds.</p>
+      <div class="body"><div id="credo-4-out"><p class="note">Import a key first.</p></div></div>
+    </div>
+
+    <!-- 5 -->
+    <div class="step locked" id="credo-step-5" data-done="false">
+      <div class="step-head"><span class="step-num">5</span><h2>What is in the wallet</h2></div>
+      <p class="hint">Read back from the wallet — the DID and the key type Askar is actually holding.</p>
+      <div class="body"><div id="credo-5-out"><p class="note">Import the DID first.</p></div></div>
+    </div>
+
+    <!-- 6 -->
+    <div class="step locked" id="credo-step-6" data-done="false">
+      <div class="step-head"><span class="step-num">6</span><h2>Issue a credential</h2></div>
+      <p class="hint">An SD-JWT VC signed by the <b>wallet-managed key</b>, with <code>iss</code> = the did:x509 DID. The certificate key never leaves the wallet.</p>
+      <div class="body"><div id="credo-6-out"><p class="note">Bind the DID first.</p></div></div>
+    </div>
+
+    <!-- 7 -->
+    <div class="step locked" id="credo-step-7" data-done="false">
+      <div class="step-head"><span class="step-num">7</span><h2>Verify</h2></div>
+      <p class="hint">The verifier re-resolves the DID from the chain, then checks the signature — the holder discloses one claim and withholds another.</p>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action" id="btn-credo-verify" disabled>Verify credential</button>
+        </div>
+        <div id="credo-7-out"><p class="note">Issue a credential first.</p></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:1rem">
+      <button class="action" id="btn-credo-run">Run all seven steps</button>
+      <button class="ghost" id="btn-credo-reset">Reset the wallet</button>
+    </div>
+    <div id="credo-run-out"></div>
+  </div>
+</section>
+
 <section id="panel-flows" role="tabpanel" aria-labelledby="tab-flows" hidden>
   <p class="note" style="margin:0 0 1rem">
-    Four self-contained smoke-test flows, each starting from a fresh throwaway chain.
+    Five self-contained smoke-test flows, each starting from a fresh throwaway chain.
+    These mirror <code>npm run all</code>, so the CLI and this page exercise the same code.
   </p>
   <div class="flows" id="flows">
     <button data-flow="resolve"><strong>Resolve</strong><span>Recover a DID document from a certificate chain</span></button>
     <button data-flow="jsonld"><strong>JSON-LD VC</strong><span>Data Integrity credential (eddsa-rdfc-2022)</span></button>
     <button data-flow="sd-jwt"><strong>SD-JWT VC</strong><span>ES256 with selective disclosure</span></button>
     <button data-flow="mdoc"><strong>mDoc</strong><span>ISO/IEC 18013-5 with x5chain</span></button>
+    <button data-flow="credo"><strong>Credo</strong><span>Resolve, import and verify via @didx509/credo</span></button>
   </div>
-  <button id="run-all"><strong>Run all four flows</strong></button>
+  <button id="run-all"><strong>Run all five flows</strong></button>
   <main id="output"></main>
 </section>
 
@@ -624,7 +841,7 @@ const HTML = `<!doctype html>
 <footer>
   <p>
     Wraps Microsoft's <a href="https://github.com/microsoft/didx509cpp">didx509cpp</a> reference resolver.
-    Prefer the CLI? <code>deno task all</code> runs every flow locally.
+    Prefer the CLI? <code>npm run all</code> runs every flow locally.
   </p>
   <p class="credit">
     Built by <a href="https://www.ayanworks.com">AYANWORKS</a> — Digital Trust Infrastructure for Nations.
@@ -643,10 +860,13 @@ const HTML = `<!doctype html>
     output.innerHTML = results.map(r => {
       const ok = r.flow === 'jsonld' || r.flow === 'sd-jwt'
         ? r.details.verified
-        : r.flow === 'mdoc'
-          ? r.details.issuerAuthVerified
-          : true;
-      const { document, credential, ...rest } = r.details;
+        : r.flow === 'credo'
+          // Keyless resolution is a valid outcome, not a failure.
+          ? r.details.canSign === false || r.details.verified
+          : r.flow === 'mdoc'
+            ? r.details.issuerAuthVerified
+            : true;
+      const { document, credential, didDocument, ...rest } = r.details;
       return \`
         <section class="result">
           <h3>\${esc(r.title)}

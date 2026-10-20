@@ -43,6 +43,25 @@ export interface X509DidResolverOptions {
   implementation?: Didx509Implementation;
 
   /**
+   * Rewrite the resolved verification method `type` from the did:x509 spec's
+   * `JsonWebKey` to W3C `JsonWebKey2020`.
+   *
+   * The did:x509 specification (and Microsoft's reference resolver) emits
+   * `type: "JsonWebKey"`. Credo's key-mapping layer only recognises
+   * `JsonWebKey2020`, `Multikey`, `Ed25519VerificationKey2018` and
+   * `EcdsaSecp256k1VerificationKey2019`, so a spec-exact document cannot be
+   * used by Credo's own signing and verification APIs — they throw
+   * `Unsupported key did from verification method type 'JsonWebKey'`.
+   *
+   * Off by default: resolution stays byte-for-byte identical to the reference
+   * resolver unless you opt in. Enable it when you intend to feed the document
+   * to `agent.dids.import(...)` and sign with the wallet key.
+   *
+   * @default false
+   */
+  jsonWebKey2020VerificationMethod?: boolean;
+
+  /**
    * Optional hook invoked when the `x509chain` resolution option is absent.
    * Return the comma-separated base64url DER chain for the DID (e.g. from your
    * own registry or database), or `undefined` to let resolution fail.
@@ -127,6 +146,10 @@ export class X509DidResolver implements DidResolver {
           ? await this.resolveWithNative(did, x509chain)
           : await resolveDid(did, loadX509Chain(x509chain));
 
+      if (this.options.jsonWebKey2020VerificationMethod) {
+        this.applyJsonWebKey2020(documentJson);
+      }
+
       return {
         didResolutionMetadata: { contentType: 'application/did+ld+json' },
         didDocument: JsonTransformer.fromJSON(
@@ -143,6 +166,24 @@ export class X509DidResolver implements DidResolver {
         didDocument: null,
         didDocumentMetadata: {},
       };
+    }
+  }
+
+  /**
+   * Rewrite `type: "JsonWebKey"` to `type: "JsonWebKey2020"` in place.
+   *
+   * Only the verification method `type` is touched; ids, controller and key
+   * material are left alone, so the document still describes exactly the same
+   * key — it just uses a type Credo's key-mapping layer recognises.
+   */
+  private applyJsonWebKey2020(document: DidDocumentJson): void {
+    const methods = document.verificationMethod;
+    if (Array.isArray(methods)) {
+      for (const method of methods) {
+        if (method && method.type === 'JsonWebKey') {
+          method.type = 'JsonWebKey2020';
+        }
+      }
     }
   }
 
