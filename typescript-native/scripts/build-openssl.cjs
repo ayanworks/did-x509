@@ -55,15 +55,27 @@ function run(command, args, options) {
 
 // Locate an executable on PATH. On Windows, PATH may point at executables
 // whose actual name is lowercase (perl.exe) while PATHEXT says .EXE.
+//
+// The literal name is tried first, then PATHEXT-suffixed variants. This
+// matters because callers may pass an already-qualified name (jom.exe) and
+// standard PATHEXT does not end with ';' — appending extensions blindly
+// would then only ever produce jom.exe.exe, jom.exe.cmd, ... and never
+// match the file that exists.
 function findInPath(name) {
-  const exts =
-    process.platform === 'win32'
-      ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').toLowerCase().split(';')
-      : [''];
+  const variants = [name];
+  if (process.platform === 'win32') {
+    const exts = (process.env.PATHEXT || '.EXE;.CMD;.BAT')
+      .toLowerCase()
+      .split(';')
+      .filter(Boolean);
+    for (const ext of exts) {
+      if (!name.toLowerCase().endsWith(ext)) variants.push(name + ext);
+    }
+  }
   for (const dir of (process.env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
-    for (const ext of exts) {
-      const candidate = path.join(dir, name + ext);
+    for (const variant of variants) {
+      const candidate = path.join(dir, variant);
       if (existsSync(candidate)) return candidate;
     }
   }
