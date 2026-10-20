@@ -42,6 +42,33 @@ jobs:
       run: npm run build
       working-directory: typescript
 
+  examples:
+    name: Signing Examples
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Build @didx509/core (linked package dependency)
+      shell: bash
+      working-directory: typescript
+      run: |
+        npm ci
+        npm run build
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: examples
+      run: npm ci
+
+    - name: Run all examples
+      shell: bash
+      working-directory: examples
+      run: npm run all
+
   typescript-native:
     name: Native TypeScript Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
