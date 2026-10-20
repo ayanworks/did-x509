@@ -66,10 +66,41 @@ function extractTbsCertificate(cert: X509Certificate): ArrayBuffer {
 }
 
 /**
+ * Coordinate size in bytes for a named curve, i.e. the size in the raw
+ * `r||s` representation Web Crypto expects.
+ *
+ * This must come from the curve, not from the signature: ASN.1 INTEGERs are
+ * minimally encoded, so a coordinate with a leading zero byte is stripped
+ * (e.g. a 66-byte P-521 coordinate arrives as 65 bytes). Sizing the output
+ * from `max(r.length, s.length)` therefore produces a short buffer that Web
+ * Crypto rejects — observed for roughly 70% of P-521 signatures.
+ */
+function ecCoordinateSize(crv: string | undefined): number {
+  switch (crv) {
+    case 'P-256':
+      return 32;
+    case 'P-384':
+      return 48;
+    case 'P-521':
+      return 66;
+    default:
+      return 0;
+  }
+}
+
+/**
  * Convert a DER-encoded ECDSA signature (SEQUENCE { INTEGER r, INTEGER s })
  * to raw r||s format (IEEE P1363) expected by Web Crypto.
+ *
+ * `coordinateSize` is the field size in bytes for the signer's curve (32 for
+ * P-256, 48 for P-384, 66 for P-521). When omitted, the size is inferred from
+ * the longest present coordinate, which is correct only when neither value had
+ * a leading byte stripped.
  */
-function derToRawEcdsaSignature(derSig: ArrayBuffer): ArrayBuffer {
+function derToRawEcdsaSignature(
+  derSig: ArrayBuffer,
+  coordinateSize?: number
+): ArrayBuffer {
   const asn1 = asn1js.fromBER(derSig);
   const seq = asn1.result;
   if (!(seq instanceof asn1js.Sequence)) {
@@ -91,9 +122,8 @@ function derToRawEcdsaSignature(derSig: ArrayBuffer): ArrayBuffer {
   const rClean = removeLeadingZeros(r);
   const sClean = removeLeadingZeros(s);
 
-  // Both r and s must be exactly 32 bytes for P-256, 48 bytes for P-384
-  // Determine the key size from the algorithm or use a fixed size
-  const keySize = Math.max(rClean.length, sClean.length);
+  // Prefer the caller-provided curve size; fall back to the longest coordinate.
+  const keySize = coordinateSize || Math.max(rClean.length, sClean.length);
   const rPadded = padToLength(rClean, keySize);
   const sPadded = padToLength(sClean, keySize);
 
@@ -339,7 +369,7 @@ export async function verifyCertificateIssuedBy(
   const tbsBytes = extractTbsCertificate(cert);
 
   // Export the issuer's public key
-  const issuerPublicKey = await issuer.publicKey.export();
+  let issuerPublicKey = await issuer.publicKey.export();
 
   // X.509 certificates store ECDSA signatures in DER format, but Web Crypto
   // expects raw r||s (IEEE P1363) format. Branch on the certificate's declared
@@ -347,9 +377,42 @@ export async function verifyCertificateIssuedBy(
   // signature values are random-looking byte strings that can begin with 0x30
   // (~1/256 of the time), which the byte heuristic misclassified as DER ECDSA
   // and corrupted.
+  //
+  // The coordinate size comes from the curve of the *issuer's* key, which is
+  // the key that produced the signature (and the key Web Crypto verifies
+  // against). Minimally-encoded ASN.1 INTEGERs lose a leading zero byte and
+  // would otherwise yield a short buffer (see `ecCoordinateSize`). The child's
+  // own curve is unrelated here: a fulcio leaf on P-256 is signed by a P-384
+  // CA, and sizing from the leaf would truncate every such signature.
   let signatureBytes: ArrayBuffer = cert.signature;
   if (cert.signatureAlgorithm?.name === 'ECDSA') {
-    signatureBytes = derToRawEcdsaSignature(cert.signature);
+    const issuerKeyAlgorithm = issuer.publicKey.algorithm as {
+      namedCurve?: string;
+    };
+    signatureBytes = derToRawEcdsaSignature(
+      cert.signature,
+      ecCoordinateSize(issuerKeyAlgorithm.namedCurve)
+    );
+  }
+
+  // An RSA key is exported from the shared `rsaEncryption` SPKI (OID
+  // 1.2.840.113549.1.1.1), so Web Crypto reports its algorithm as
+  // RSASSA-PKCS1-v1_5 even for an RSA-PSS certificate. Web Crypto rejects
+  // that pairing ("Key algorithm mismatch"), so re-import the same SPKI key
+  // as RSA-PSS. The signature algorithm itself must be passed through
+  // unchanged, because RSA-PSS verification needs the certificate's own salt
+  // length.
+  if (cert.signatureAlgorithm?.name === 'RSA-PSS') {
+    issuerPublicKey = await crypto.subtle.importKey(
+      'spki',
+      issuer.publicKey.rawData,
+      {
+        name: 'RSA-PSS',
+        hash: cert.signatureAlgorithm.hash,
+      },
+      true,
+      ['verify']
+    );
   }
 
   // Verify the child certificate's signature against the issuer's public key

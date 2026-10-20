@@ -114,6 +114,52 @@ npm run all
 
 See [`examples/README.md`](examples/README.md) for a walkthrough of each.
 
+## Supported key types
+
+A `did:x509` DID is backed by a certificate, so what you can resolve is bounded by
+what the certificate chain is signed with. `@didx509/core` verifies certificate
+signatures and exports the subject public key as a JWK through the
+[Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API),
+so support follows the runtime's Web Crypto implementation rather than anything
+specific to this library.
+
+The table below is what has been tested end-to-end — a certificate chain is
+generated, a DID is derived from it, and the DID is resolved back to a JWK.
+
+| Key / curve | Status | JWK emitted | Notes |
+|-------------|--------|-------------|-------|
+| RSA 2048–4096, PKCS#1 v1.5 | Supported | `kty=RSA` | Most common CA-issued type; Let's Encrypt R-series, DigiCert G2 |
+| RSA-PSS (SHA-256, SHA-512) | Supported | `kty=RSA` | Verification re-imports the issuer key as `RSA-PSS`; salt length comes from the certificate |
+| ECDSA P-256 | Supported | `kty=EC`, `crv=P-256` | Fulcio; most modern intermediate CAs |
+| ECDSA P-384 | Supported | `kty=EC`, `crv=P-384` | Let's Encrypt E-series, ISRG Root X2, DigiCert G3 |
+| ECDSA P-521 | Supported | `kty=EC`, `crv=P-521` | NIST/Secure Hash style PKIs |
+| Ed25519 | Supported | `kty=OKP`, `crv=Ed25519` | Used by some internal PKIs; supported by Web Crypto on modern runtimes |
+| Ed448 | Not supported | — | Web Crypto supports it, but `@peculiar/x509` cannot map it to ASN.1 |
+| ML-DSA (post-quantum, 44/65/87) | Not supported | — | Not supported by the C++ reference either; see below |
+
+Mixed chains are fine: the signature is verified with the **issuer's** key, so a
+P-256 leaf signed by a P-384 CA (the shape fulcio produces) resolves correctly and
+the resulting JWK describes the leaf's own key.
+
+This covers what you would get from a typical publicly-trusted CA (Let's Encrypt,
+DigiCert, ISRG, Sectigo), an OpenBao/Vault-style internal PKI, and most national
+PKI roots, all of which issue RSA or NIST-curve ECDSA certificates. Two caveats are
+worth stating plainly:
+
+- **Ed448 and ML-DSA are not supported — by the reference implementation either.**
+  The pure-TypeScript resolver is blocked by `@peculiar/x509`, which has no ASN.1
+  mapping for either algorithm. But the same limit applies to Microsoft's C++
+  reference (`didx509cpp`): its `public_jwk()` handles only RSA, EC (P-256/P-384/
+  P-521), and Ed25519, and throws `unsupported key base id` for anything else. No
+  released version, including 1.0.0, supports ML-DSA. The two implementations
+  intentionally agree here, so this is a shared boundary rather than a gap unique to
+  this package.
+- **Trust is still your decision.** Resolving a DID proves the chain is
+  internally consistent; it does not tell you whether that CA is one you trust.
+  Pin the CA (the DID's fingerprint already does this), or check the chain against
+  your own trust roots, before you act on a credential — see the
+  [confidence and trust discussion](typescript/docs/practical-guide.md).
+
 ## Contributing
 
 This project welcomes contributions and suggestions. Please see the [Contribution guidelines](CONTRIBUTING.md).
