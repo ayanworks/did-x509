@@ -1,0 +1,52 @@
+{
+  "name": "did-x509-playground",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "all": "node src/cli.ts",
+    "check": "tsc --noEmit",
+    "smoke:credo": "node src/smoke-credo.ts"
+  },
+  "dependencies": {
+    "@credo-ts/askar": "^0.7.2",
+    "@credo-ts/core": "0.7.2",
+    "@credo-ts/node": "^0.7.2",
+    "@didx509/core": "file:../typescript",
+    "@didx509/credo": "file:../typescript-credo",
+    "@digitalbazaar/credentials-context": "3.2.0",
+    "@digitalbazaar/data-integrity": "2.5.0",
+    "@digitalbazaar/data-integrity-context": "2.0.0",
+    "@digitalbazaar/ed25519-verification-key-2020": "4.2.0",
+    "@digitalbazaar/eddsa-rdfc-2022-cryptosuite": "1.3.0",
+    "@digitalbazaar/security-context": "1.0.0",
+    "@digitalbazaar/vc": "7.3.0",
+    "@noble/curves": "2.0.0",
+    "@noble/hashes": "2.0.0",
+    "@openwallet-foundation/askar-nodejs": "^0.6.1",
+    "@owf/cose": "0.5.0",
+    "@owf/crypto": "0.5.0",
+    "@owf/mdoc": "0.8.3",
+    "@peculiar/x509": "2.0.0",
+    "@sd-jwt/core": "0.23.0",
+    "@sd-jwt/sd-jwt-vc": "0.23.0",
+    "asn1js": "3.0.6",
+    "did-resolver": "4.1.0",
+    "jsonld-signatures": "11.6.0",
+    "multiformats": "13.4.0",
+    "pkijs": "3.4.0",
+    "reflect-metadata": "0.2.2"
+  },
+  "allowScripts": {
+    "@openwallet-foundation/askar-nodejs@0.6.1": true,
+    "cbor-extract": true,
+    "koffi@2.16.3": true
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^5.9.3"
+  }
+}

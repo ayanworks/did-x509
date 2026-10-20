@@ -11,10 +11,16 @@
     "sign:jsonld": "node 02-jsonld.ts",
     "sign:sd-jwt": "node 03-sd-jwt.ts",
     "sign:mdoc": "node 04-mdoc.ts",
-    "all": "node 01-resolve.ts && node 02-jsonld.ts && node 03-sd-jwt.ts && node 04-mdoc.ts"
+    "credo": "node 05-credo-askar.ts",
+    "all": "node 01-resolve.ts && node 02-jsonld.ts && node 03-sd-jwt.ts && node 04-mdoc.ts && node 05-credo-askar.ts"
   },
   "dependencies": {
+    "@credo-ts/askar": "0.7.2",
+    "@credo-ts/core": "0.7.2",
+    "@credo-ts/node": "0.7.2",
     "@didx509/core": "file:../typescript",
+    "@didx509/credo": "file:../typescript-credo",
+    "@openwallet-foundation/askar-nodejs": "0.6.1",
     "@digitalbazaar/credentials-context": "^3.2.0",
     "@digitalbazaar/data-integrity": "^2.5.0",
     "@digitalbazaar/data-integrity-context": "^2.0.0",
@@ -34,5 +40,10 @@
     "jsonld-signatures": "^11.6.0",
     "multiformats": "^13.4.0",
     "reflect-metadata": "^0.2.2"
+  },
+  "allowScripts": {
+    "@openwallet-foundation/askar-nodejs@0.6.1": true,
+    "cbor-extract": true,
+    "koffi@2.16.3": true
   }
 }

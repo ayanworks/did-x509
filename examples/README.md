@@ -18,6 +18,7 @@ registration.
 | `02-jsonld.ts` | `npm run sign:jsonld` | Issue and verify a **JSON-LD Verifiable Credential** (Data Integrity, `eddsa-rdfc-2022`) whose issuer is the did:x509 DID. |
 | `03-sd-jwt.ts` | `npm run sign:sd-jwt` | Issue and verify an **SD-JWT VC** (ES256) with selective disclosure, signed by the leaf certificate key. |
 | `04-mdoc.ts` | `npm run sign:mdoc` | Issue and verify an **mDoc** (ISO/IEC 18013-5, the mDL profile) whose `x5chain` carries the same certificate the DID names. |
+| `05-credo-askar.ts` | `npm run credo` | Import the did:x509 identity into a **Credo wallet backed by Askar**: resolve the DID, import the certificate key, `agent.dids.import` the DID + key binding, then sign and verify an SD-JWT VC with the wallet-managed key. |
 
 Run them all at once:
 
@@ -28,6 +29,10 @@ npm run all
 
 Requires **Node.js 22.18+** (the examples are plain TypeScript executed
 directly by Node's type stripping, and `@owf/mdoc` targets modern runtimes).
+
+> **`05` is Node-only.** Askar is a native addon, so that example cannot run on
+> Deno or an edge runtime. The other four are portable. See
+> [The Credo / Askar example](#05--credo-and-the-askar-wallet) below.
 
 ## What each example demonstrates
 
@@ -75,6 +80,51 @@ document signer's certificate *is* the DID. The example implements the
 `MdocContext` on Web Crypto, signs the MSO with the leaf key, ships the
 `x5chain`, and validates that chain against a trusted root during
 verification.
+
+### 05 — Credo and the Askar wallet
+
+This is the full Credo integration, with a real `Agent`:
+
+```ts
+const agent = new Agent({
+  config: { walletConfig: { id, key } },
+  dependencies: agentDependencies,
+  modules: {
+    askar: new AskarModule({
+      askar: NativeAskar,
+      store: { id, key, database: { type: 'sqlite', config: { inMemory: true } } },
+    }),
+    dids: new DidsModule({
+      resolvers: [
+        new X509DidResolver({
+          jsonWebKey2020VerificationMethod: true,
+          getChain: () => identity.x509chain,
+        }),
+      ],
+    }),
+  },
+});
+```
+
+It then resolves the DID, imports the certificate's key with
+`agent.kms.importKey`, binds the DID document to it with `agent.dids.import`,
+signs an SD-JWT VC with `agent.sdJwtVc.sign` (the key never leaves the wallet),
+and verifies it.
+
+Three things are worth knowing before you copy this:
+
+- **It is Node-only.** Askar is a native addon (`ffi-napi` / a prebuilt
+  `.node`), so this cannot run on Deno or an edge runtime. The deployed
+  playground therefore stops at the resolver layer; the wallet lives here.
+- **Import `@openwallet-foundation/askar-nodejs` first.** It registers the
+  native binding as a side effect, and `NativeAskar` is unusable until it has.
+- **Two resolver options are needed.** Credo's key-mapping layer only knows
+  `JsonWebKey2020`, not the spec's `JsonWebKey`, so
+  `jsonWebKey2020VerificationMethod: true` is required for signing to resolve
+  the key. And Credo's verification path resolves the DID without passing the
+  `x509chain` option, so `getChain` supplies it. Both are opt-in, so the
+  resolver's default output stays byte-for-byte identical to the reference
+  resolver.
 
 ## Shared helpers
 

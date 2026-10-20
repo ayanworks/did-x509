@@ -67,6 +67,54 @@ describe('X509DidResolver', () => {
     expect(result.didDocument).toBeInstanceOf(DidDocument);
   });
 
+  test('emits type JsonWebKey by default (spec-exact)', async () => {
+    const resolver = new X509DidResolver({ implementation: 'core' });
+    const result = await resolver.resolve(agentContext, did, parsedDid(), {
+      x509chain: timeValidChain,
+    });
+
+    expect(result.didDocument?.verificationMethod?.[0]?.type).toBe('JsonWebKey');
+  });
+
+  test('rewrites the verification method type when opted in', async () => {
+    // Credo's key-mapping layer rejects the spec's `JsonWebKey` type, so the
+    // resolver can emit `JsonWebKey2020` on request. Nothing else may change.
+    const resolver = new X509DidResolver({
+      implementation: 'core',
+      jsonWebKey2020VerificationMethod: true,
+    });
+    const result = await resolver.resolve(agentContext, did, parsedDid(), {
+      x509chain: timeValidChain,
+    });
+
+    const method = result.didDocument?.verificationMethod?.[0];
+    expect(method?.type).toBe('JsonWebKey2020');
+
+    // The id, controller and key material must be untouched.
+    const specMethod = (
+      timeValidVector.output.document as {
+        verificationMethod: { id: string; controller: string }[];
+      }
+    ).verificationMethod[0]!;
+    expect(method?.id).toBe(specMethod.id);
+    expect(method?.controller).toBe(specMethod.controller);
+
+    const document = JSON.parse(JSON.stringify(result.didDocument)) as {
+      verificationMethod?: { publicKeyJwk?: Record<string, unknown> }[];
+    };
+    for (const m of document.verificationMethod ?? []) {
+      if (m.publicKeyJwk) {
+        delete m.publicKeyJwk['ext'];
+        delete m.publicKeyJwk['key_ops'];
+      }
+    }
+    const expected = JSON.parse(
+      JSON.stringify(timeValidVector.output.document)
+    ) as { verificationMethod: { type: string }[] };
+    expected.verificationMethod[0]!.type = 'JsonWebKey2020';
+    expect(document).toEqual(expected);
+  });
+
   test('reports invalidDidResolutionOptions when the chain is missing', async () => {
     const resolver = new X509DidResolver();
     const result = await resolver.resolve(agentContext, did, parsedDid(), {});

@@ -97,6 +97,37 @@ new X509DidResolver({ implementation: 'native' }); // require the addon (throws 
 new X509DidResolver({ implementation: 'core' });   // pure TypeScript, no addon needed
 ```
 
+### Signing with a wallet key (`JsonWebKey2020`)
+
+The did:x509 specification emits `type: "JsonWebKey"` verification methods,
+matching Microsoft's reference resolver. Credo's key-mapping layer only
+recognises `JsonWebKey2020`, `Multikey`, `Ed25519VerificationKey2018` and
+`EcdsaSecp256k1VerificationKey2019`, so a spec-exact document cannot be used by
+Credo's own signing and verification APIs — they throw
+`Unsupported key did from verification method type 'JsonWebKey'`.
+
+If you intend to import the document into a wallet and sign with the imported
+key, opt in to the Credo-compatible type:
+
+```ts
+new X509DidResolver({
+  jsonWebKey2020VerificationMethod: true,
+  // Credo's verification resolves without forwarding `x509chain`, so a chain
+  // provider is needed there too.
+  getChain: () => chain.join(','),
+});
+```
+
+This rewrites only the verification method `type`. Ids, controller and key
+material are untouched, so the document still describes exactly the same key.
+It is **off by default**: without it, resolution output is identical to the
+reference resolver.
+
+Both options are exercised end to end in
+[`examples/05-credo-askar.ts`](../examples/05-credo-askar.ts), which imports a
+did:x509 identity into an Askar-backed wallet and signs a credential with it.
+That example is Node-only, because Askar is a native addon.
+
 ## Credo integration example (agent-controller)
 
 In [credebl/agent-controller](https://github.com/credebl/agent-controller),
