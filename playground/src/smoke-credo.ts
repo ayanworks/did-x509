@@ -98,6 +98,27 @@ async function main() {
     didSubjectAttribute: 'CN',
   });
 
+  // A run without a `through` value must fill every step. Asserting it once
+  // here keeps the checks below readable and would catch a regression where a
+  // partial result was returned for a full-flow request.
+  check(
+    'a full run returns all seven steps',
+    [
+      result.resolution,
+      result.import,
+      result.binding,
+      result.wallet,
+      result.issuance,
+      result.verification,
+    ].every(Boolean)
+  );
+  if (!result.resolution || !result.import || !result.binding || !result.wallet
+    || !result.issuance || !result.verification) {
+    failures.push('a run with no `through` returned an incomplete result');
+    report(failures);
+    return;
+  }
+
   check('agent uses an in-memory wallet', result.agent.storage, 'sqlite (in-memory)');
   check('resolved DID matches the chain', result.resolution.did, identity.did);
   check(
@@ -120,16 +141,43 @@ async function main() {
     failures.push(`verification error: ${result.verification.error}`);
   }
 
-  // 3. Reset must end the session cleanly.
+  // 3. Stepping must be cumulative, not a separate code path: asking for step 3
+  //    alone should leave steps 4-7 unset even though the wallet did the work.
+  const { result: partial } = await api<{ result: CredoAgentResult }>(
+    '/api/credo-agent/run',
+    {
+      chainPem: identity.pemChain,
+      keyPem: identity.keyPem,
+      didSubjectAttribute: 'CN',
+      through: 3,
+    }
+  );
+  check('step 3 resolves, imports, and stops', Boolean(
+    partial.resolution && partial.import && !partial.binding
+      && !partial.wallet && !partial.issuance && !partial.verification
+  ));
+  check('step 3 reuses the same wallet agent', partial.agent.walletId, result.agent.walletId);
+
+  // 4. Reset must end the session cleanly.
   const reset = await api<{ ok: boolean }>('/api/credo-agent/reset');
   check('wallet reset', reset.ok);
 
+  report(failures);
+  console.log('\n✓ Credo Agent: all seven steps verified');
+}
+
+/**
+ * Print failures and exit non-zero, or return so the caller can print success.
+ *
+ * Kept as a function because the step checks above need to bail out early when
+ * a full run came back incomplete.
+ */
+function report(failures: string[]): void {
   if (failures.length) {
     console.error(`\n✗ Credo Agent smoke test failed (${failures.length}):`);
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
   }
-  console.log('\n✓ Credo Agent: all seven steps verified');
 }
 
 main().catch((error: Error) => {

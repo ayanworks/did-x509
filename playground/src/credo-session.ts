@@ -15,7 +15,12 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { CredoAgentResult, CredoSession } from './credo-agent.ts';
+import {
+  CREDO_LAST_STEP,
+  type CredoAgentResult,
+  type CredoSession,
+  type CredoStep,
+} from './credo-agent.ts';
 import type { SigningIdentity } from './lib/identity.ts';
 
 /** Idle timeout: an untouched session is shut down after this long. */
@@ -103,13 +108,20 @@ async function acquire(
   return { entry, id, created: true };
 }
 
-/** Run the full Credo flow for this browser, starting an Agent if needed. */
+/**
+ * Run the Credo flow for this browser, starting an Agent if needed.
+ *
+ * `through` stops after that step, so the UI can offer one button per step. The
+ * Agent is reused across calls, which is why running step 2 and then step 3
+ * continues the same wallet rather than starting a fresh one.
+ */
 export async function runCredoAgent(
   sessionId: string | undefined,
-  identity: SigningIdentity
+  identity: SigningIdentity,
+  through: CredoStep = CREDO_LAST_STEP
 ): Promise<{ result: CredoAgentResult; sessionId: string; setCookie?: string }> {
   const { entry, id, created } = await acquire(sessionId);
-  const result = await entry.session.run(identity);
+  const result = await entry.session.run(identity, through);
   return {
     result,
     sessionId: id,
