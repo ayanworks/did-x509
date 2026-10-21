@@ -19,6 +19,11 @@ name: Publish
 # stored in the repository. A trusted publisher must be configured per package
 # on npmjs.com (Packages -> the package -> Settings -> Trusted publishing),
 # naming this repository, `publish.yml`, and allowing `npm publish`.
+#
+# A successful publish also creates the matching GitHub release, so the release
+# page and the tag cannot drift apart and a release is never forgotten. The
+# three packages version independently, so each release covers one package and
+# none is marked "latest" — a single global "latest" would be misleading.
 
 on:
   push:
@@ -45,6 +50,10 @@ jobs:
     permissions:
       contents: read
       id-token: write # npm provenance
+    outputs:
+      name: ${{ steps.target.outputs.name }}
+      version: ${{ steps.target.outputs.version }}
+      dir: ${{ steps.target.outputs.dir }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,6 +80,11 @@ jobs:
           esac
           echo "package=$pkg" >> "$GITHUB_OUTPUT"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          # Exposed for the release step so its title and notes name the real
+          # npm package and version rather than being scraped back out of the
+          # tag.
+          echo "name=$(node -p "require('./$dir/package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./$dir/package.json').version")" >> "$GITHUB_OUTPUT"
 
       # On a tag push, the tag version and the manifest version must agree.
       - name: Check tag matches package.json version
@@ -148,3 +162,56 @@ jobs:
         # automatically. A trusted publisher must be configured for the package
         # on npmjs.com, naming this repository and `publish.yml`.
         run: npm publish --access public
+
+  # The release is a separate job so it can be re-run on its own. If it were
+  # a step in the publish job, a failure would fail the whole job, and
+  # re-running would stop at `npm publish` with "cannot publish over the
+  # previously published versions" — leaving the package published on npm with
+  # no release and no way to fix that by re-running the workflow.
+  release:
+    name: Release ${{ github.ref_name }}
+    needs: publish
+    # `always()` so the job is not skipped when the publish job is skipped
+    # (a manual dispatch publishes without a tag, and has no release to make);
+    # the result check is what actually gates it.
+    if: always() && needs.publish.result == 'success' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag already exists (it triggered this run), which is the one thing
+      # GitHub Releases require and the reason a release could not be created
+      # for a package whose tag was never pushed. Creating it here ties the
+      # release to a publish that actually succeeded.
+      #
+      # `--latest=false` matters: GitHub marks a new release "Latest" by
+      # default, and a single global "Latest" is misleading when three
+      # packages version independently — whichever was published last would
+      # claim to be the latest release of the project.
+      #
+      # `--repo` is explicit rather than inferred from the git remote, so the
+      # step cannot silently target a different repository.
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG_NAME: ${{ needs.publish.outputs.name }}
+          PKG_VERSION: ${{ needs.publish.outputs.version }}
+          PKG_DIR: ${{ needs.publish.outputs.dir }}
+        run: |
+          # Re-runnable: a release that already exists is left alone.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it as it is."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$PKG_NAME v$PKG_VERSION" \
+            --latest=false \
+            --notes "Published to npm: https://www.npmjs.com/package/$PKG_NAME/v/$PKG_VERSION
+
+          Each \`@didx509/*\` package versions independently, so see the
+          [per-package changelogs](https://github.com/${{ github.repository }}/blob/main/$PKG_DIR/CHANGELOG.md)
+          and the npm page above for what changed."
