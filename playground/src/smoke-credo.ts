@@ -158,7 +158,26 @@ async function main() {
   ));
   check('step 3 reuses the same wallet agent', partial.agent.walletId, result.agent.walletId);
 
-  // 4. Reset must end the session cleanly.
+  // 4. The server inlines `CREDO_LAST_STEP` rather than importing it (importing
+  //    it would load Credo at startup and break mDoc signing — see the note in
+  //    server.ts). This is the guard that keeps that copy honest: asking for a
+  //    step past the end must clamp to the real last step, not to a stale one.
+  const { CREDO_LAST_STEP } = await import('./credo-agent.ts');
+  const overshoot = await api<{ result: CredoAgentResult }>(
+    '/api/credo-agent/run',
+    {
+      chainPem: identity.pemChain,
+      keyPem: identity.keyPem,
+      didSubjectAttribute: 'CN',
+      through: CREDO_LAST_STEP + 5,
+    }
+  );
+  check(
+    'the server clamps to the real last step',
+    Boolean(overshoot.result.verification?.valid),
+  );
+
+  // 5. Reset must end the session cleanly.
   const reset = await api<{ ok: boolean }>('/api/credo-agent/reset');
   check('wallet reset', reset.ok);
 

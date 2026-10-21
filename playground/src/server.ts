@@ -17,10 +17,15 @@
  */
 
 import { FLOWS, runAll, type FlowName, type FlowResult } from './flows.ts';
-import {
-  CREDO_LAST_STEP,
-  type CredoStep,
-} from './credo-agent.ts';
+// Type-only: erased at compile time, so this does NOT load `credo-agent.ts` at
+// startup. That matters. `credo-agent.ts` pulls in Credo, which pins
+// `@owf/cose@0.4.2`, while `sign-mdoc.ts` uses `@owf/cose@0.5.0`; the two share
+// `cbor-x`'s encoder state, and loading Credo first makes every later mDoc sign
+// fail with `expected DataItem, received object`. Credo is therefore imported
+// lazily inside the Credo routes below, so a request that never touches the
+// Credo tab is unaffected. `CREDO_LAST_STEP` is inlined as a local constant for
+// the same reason — importing it as a value would reintroduce the problem.
+import type { CredoStep } from './credo-agent.ts';
 import { STUDIO_SCRIPT } from './studio-script.ts';
 import {
   credentialCatalogue,
@@ -76,6 +81,17 @@ function readCookie(header: string | null, name: string): string | undefined {
   }
   return undefined;
 }
+
+/**
+ * The last Credo step, mirrored from `credo-agent.ts`.
+ *
+ * Kept as a plain constant rather than an import: `credo-agent.ts` loads Credo
+ * at module scope, and loading Credo at startup breaks mDoc signing for every
+ * later request (see the note on the type-only import above). The value is
+ * asserted against the real one in `smoke-credo.ts`, so the two cannot drift
+ * silently.
+ */
+const CREDO_LAST_STEP: CredoStep = 7;
 
 /**
  * Clamp a requested Credo step to the supported 1-7 range.
