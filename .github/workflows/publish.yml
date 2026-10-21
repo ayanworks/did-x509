@@ -19,6 +19,11 @@ name: Publish
 # stored in the repository. A trusted publisher must be configured per package
 # on npmjs.com (Packages -> the package -> Settings -> Trusted publishing),
 # naming this repository, `publish.yml`, and allowing `npm publish`.
+#
+# A successful publish also creates the matching GitHub release, so the release
+# page and the tag cannot drift apart and a release is never forgotten. The
+# three packages version independently, so each release covers one package and
+# none is marked "latest" — a single global "latest" would be misleading.
 
 on:
   push:
@@ -43,7 +48,9 @@ jobs:
     name: Publish ${{ github.event.inputs.package || (startsWith(github.ref_name, 'credo-') && 'credo' || 'core') }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # `contents: write` is for creating the GitHub release below; npm
+      # publishing itself does not need it.
+      contents: write
       id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +78,11 @@ jobs:
           esac
           echo "package=$pkg" >> "$GITHUB_OUTPUT"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          # Exposed for the release step so its title and notes name the real
+          # npm package and version rather than being scraped back out of the
+          # tag.
+          echo "name=$(node -p "require('./$dir/package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./$dir/package.json').version")" >> "$GITHUB_OUTPUT"
 
       # On a tag push, the tag version and the manifest version must agree.
       - name: Check tag matches package.json version
@@ -148,3 +160,23 @@ jobs:
         # automatically. A trusted publisher must be configured for the package
         # on npmjs.com, naming this repository and `publish.yml`.
         run: npm publish --access public
+
+      # The tag already exists (it triggered this run), which is the one thing
+      # GitHub Releases require and the reason a release could not be created
+      # for a package whose tag was never pushed. Creating it here ties the
+      # release to a publish that actually succeeded.
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG_NAME: ${{ steps.target.outputs.name }}
+          PKG_VERSION: ${{ steps.target.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$PKG_NAME v$PKG_VERSION" \
+            --notes "Published to npm: https://www.npmjs.com/package/$PKG_NAME/v/$PKG_VERSION
+
+          Each \`@didx509/*\` package versions independently, so see the
+          [per-package changelogs](https://github.com/${{ github.repository }}/blob/main/${{ steps.target.outputs.dir }}/CHANGELOG.md)
+          and the npm page above for what changed."

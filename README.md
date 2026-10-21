@@ -56,6 +56,10 @@ console.log(doc.verificationMethod[0].publicKeyJwk);
 
 Same API as `@didx509/core`, but every resolution runs inside Microsoft's C++ reference implementation (`didx509cpp`) through a Node-API addon — identical behaviour to the reference, verified against all 220 official test vectors on every CI build. For Node.js, Electron, Bun, and Deno; browsers and React Native keep using `@didx509/core`.
 
+> **Not yet published to npm.** The source is in this repository and builds
+> locally, but the package has no release yet, so the install below is from the
+> checkout rather than the registry.
+
 ```bash
 cd typescript-native
 npm install

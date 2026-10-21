@@ -30,28 +30,32 @@ blockchain. The DID string encodes the chain's SHA-256 fingerprint plus
 the subject fields you choose to trust (e.g.
 `did:x509:0:sha256:<fingerprint>::subject:CN:Engineering`), so anyone holding
 the matching certificate chain can cryptographically prove control of the DID
-— no ledger required. This package wraps Microsoft's official
-[didx509cpp](https://github.com/microsoft/didx509cpp) reference resolver
-(through [`@didx509/native`](https://www.npmjs.com/package/@didx509/native))
-with a pure-TypeScript fallback
-([`@didx509/core`](https://www.npmjs.com/package/@didx509/core)).
+— no ledger required. This package resolves DIDs with the pure-TypeScript
+resolver in [`@didx509/core`](https://www.npmjs.com/package/@didx509/core),
+and falls back to it by default. When
+[`@didx509/native`](https://github.com/ayanworks/did-x509) ships — a wrapper
+around Microsoft's official
+[didx509cpp](https://github.com/microsoft/didx509cpp) reference resolver — the
+same code path uses it automatically.
 
 ## Installation
 
 ```bash
-npm install @didx509/credo @didx509/native
+npm install @didx509/credo
 ```
 
 | Package | Role |
 | --- | --- |
 | `@didx509/credo` | This package — the Credo `DidResolver` implementation |
-| `@didx509/native` | **(optional)** Microsoft's C++ resolver as a Node-API addon — prebuilt binaries, faster |
-| `@didx509/core` | Pure TypeScript resolver — installed automatically, used when the native addon is unavailable |
+| `@didx509/core` | Pure TypeScript resolver — installed automatically |
+| `@didx509/native` | **(optional, not yet published)** Microsoft's C++ resolver as a Node-API addon — prebuilt binaries, faster |
 
-`@didx509/native` is an optional peer dependency: without it the resolver
-transparently falls back to `@didx509/core`. Both engines share the same
-conformance suite (the official did:x509 test vectors), so behaviour is
-identical.
+`@didx509/native` is an optional peer dependency, so it is skipped when it is
+not installed: the resolver transparently falls back to `@didx509/core`. It
+has not been published to npm yet, so the default install above uses the
+pure-TypeScript resolver. When it does ship, installing it alongside this
+package needs no code change.
+
 
 ## Usage
 
@@ -167,8 +171,9 @@ register the resolver where the agent modules are assembled
   registered with the W3C DID Working Group)
 - [didx509cpp](https://github.com/microsoft/didx509cpp) — the C++ reference
   implementation this package wraps
-- [npm: @didx509/native](https://www.npmjs.com/package/@didx509/native) ·
-  [npm: @didx509/core](https://www.npmjs.com/package/@didx509/core)
+- [npm: @didx509/core](https://www.npmjs.com/package/@didx509/core)
+- [@didx509/native](https://github.com/ayanworks/did-x509/tree/main/typescript-native)
+  — source for the native wrapper; not yet published to npm
 
 ## License
 
