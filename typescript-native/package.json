@@ -92,7 +92,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ayanworks/did-x509",
+    "url": "git+https://github.com/ayanworks/did-x509.git",
     "directory": "typescript-native"
   },
   "bugs": {

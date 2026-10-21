@@ -217,6 +217,5 @@ jobs:
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/native-v')
         working-directory: typescript-native
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_DIDX509 }}
+        # Trusted publishing (OIDC): no token. See publish.yml for details.
+        run: npm publish --access public

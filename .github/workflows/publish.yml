@@ -14,6 +14,11 @@ name: Publish
 # exercise the checkout in this repo. That specifier cannot be published, so
 # the publish job rewrites it to the matching semver range on a throwaway
 # copy of the manifest. The committed package.json and lockfile are untouched.
+#
+# Authentication uses npm trusted publishing (OIDC): no long-lived token is
+# stored in the repository. A trusted publisher must be configured per package
+# on npmjs.com (Packages -> the package -> Settings -> Trusted publishing),
+# naming this repository, `publish.yml`, and allowing `npm publish`.
 
 on:
   push:
@@ -136,6 +141,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         shell: bash
         working-directory: ${{ steps.target.outputs.dir }}
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_DIDX509 }}
+        # Authentication comes from trusted publishing (OIDC), so no token is
+        # passed here. The npm CLI detects the GitHub OIDC environment and
+        # exchanges it for a short-lived publish token. `id-token: write` above
+        # is what makes that exchange possible, and provenance then follows
+        # automatically. A trusted publisher must be configured for the package
+        # on npmjs.com, naming this repository and `publish.yml`.
+        run: npm publish --access public

@@ -59,7 +59,7 @@ Each npm package versions independently and publishes from its own tag:
 
 Bump the version in the package's `package.json`, merge that to `main`, then push the matching tag. The workflow fails if the tag and the manifest version disagree, so a mistyped tag cannot publish a surprise. `@didx509/credo` depends on `@didx509/core`, so publish `core` first.
 
-Publishing needs an `NPM_TOKEN_DIDX509` repository secret (used for `npm publish --provenance`).
+Publishing uses npm trusted publishing (OIDC), so no `NPM_TOKEN` secret is needed. Configure a trusted publisher for each package on npmjs.com (Packages → the package → Settings → Trusted publishing), naming this repository, the `publish.yml` workflow, and allowing `npm publish`.
 
 ## Code of Conduct
 
