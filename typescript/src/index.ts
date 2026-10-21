@@ -7,6 +7,12 @@
  * Bridges X.509 certificate infrastructure with W3C Decentralized Identifiers.
  */
 
+// `@peculiar/x509` pulls in `tsyringe`, whose CommonJS build throws unless the
+// `reflect-metadata` polyfill is loaded first. Importing it here means consumers
+// do not have to know that, and it is the first thing this package does — the
+// polyfill has to run before `tsyringe`, which loading this entry point triggers.
+import 'reflect-metadata';
+
 // Core resolution
 export {
   parseDid,
