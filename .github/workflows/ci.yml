@@ -167,14 +167,14 @@ jobs:
       with:
         node-version: '24'
 
-    - name: Build @didx509/core (file: package dependency)
+    - name: 'Build @didx509/core (file: package dependency)'
       shell: bash
       working-directory: typescript
       run: |
         npm ci
         npm run build
 
-    - name: Build @didx509/credo (file: package dependency)
+    - name: 'Build @didx509/credo (file: package dependency)'
       shell: bash
       working-directory: typescript-credo
       run: |
