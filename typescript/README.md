@@ -40,7 +40,7 @@ npm install @didx509/core
 You have a PEM certificate chain (leaf + intermediates). Extract the DID:
 
 ```typescript
-import { convertChain, computeFingerprintAsync } from '@didx509/core';
+import { convertChain, computeFingerprintAsync, loadPemCertificateChain } from '@didx509/core';
 
 const pemChain = readFileSync('cert-chain.pem', 'utf-8');
 
@@ -50,20 +50,20 @@ const leaf = decoded[0];
 const ca = decoded[decoded.length - 1];
 
 // Extract the CA fingerprint (this becomes your DID identifier)
-const caCert = (await import('@peculiar/x509')).loadPemCertificateChain(pemChain);
+const chain = loadPemCertificateChain(pemChain);
 const fingerprint = await computeFingerprintAsync(
-  caCert[caCert.length - 1], 'sha256'
+  chain[chain.length - 1], 'sha256'
 );
 
-// Build the DID
-const subjectCN = leaf.subject['2.5.4.3']; // Common Name
-const did = `did:x509:0:sha256:${fingerprint}::subject:CN%3D${pctEncode(subjectCN)}`;
+// Build the DID. `convertChain` keys the subject by its short name (CN, O, ...),
+// so no OID lookup is needed, and the predicate value must be percent-encoded.
+const did = `did:x509:0:sha256:${fingerprint}::subject:CN%3D${encodeURIComponent(leaf.subject.CN)}`;
 
 console.log(did);
 // did:x509:0:sha256:IybVX...A%3D%3D::subject:CN%3Dexample.com
 ```
 
-See [docs/practical-guide.md](docs/practical-guide.md) for the full extraction workflow with all predicate types (SAN, EKU, O, OU).
+See [docs/practical-guide.md](https://github.com/ayanworks/did-x509/blob/main/typescript/docs/practical-guide.md) for the full extraction workflow with all predicate types (SAN, EKU, O, OU).
 
 ## Workflow 2: Issue a Verifiable Credential
 
@@ -115,7 +115,7 @@ const publicKeyJwk = issuerDoc.verificationMethod[0].publicKeyJwk;
 const isValid = await verifyCredentialProof(credential, publicKeyJwk);
 ```
 
-> **Authenticating the holder** (optional): If the holder presents a Verifiable Presentation and you need to prove they control the holder's key, verify the holder's cert chain separately. See [Practical Guide: Verify a Credential](docs/practical-guide.md#step-3-verify-a-presented-credential-verifier-role) for both flows.
+> **Authenticating the holder** (optional): If the holder presents a Verifiable Presentation and you need to prove they control the holder's key, verify the holder's cert chain separately. See [Practical Guide: Verify a Credential](https://github.com/ayanworks/did-x509/blob/main/typescript/docs/practical-guide.md#step-3-verify-a-presented-credential-verifier-role) for both flows.
 
 ## Workflow 4: Register in a Trust Registry
 
@@ -133,7 +133,7 @@ const decoded = convertChain(pemChain);
 // Registration payload for a trust registry
 const registration = {
   did: doc.id,
-  legalName: decoded[0].subject['2.5.4.10'], // Organization
+  legalName: decoded[0].subject.O, // Organization
   domainName: decoded[0].extensions?.san?.[0]?.value, // first SAN
   publicKeyJwk: doc.verificationMethod[0].publicKeyJwk,
   certificateChain: decoded.map(c => c.pem), // for re-verification
@@ -199,9 +199,9 @@ didx509 encode "CN=example.com"
 
 ## Documentation
 
-- **[Practical Guide](docs/practical-guide.md)** — Real-world workflows: cert-to-DID extraction, issuing, verifying, trust registries
-- **[Getting Started](docs/getting-started.md)** — Installation, basic usage, encoding utilities
-- **[API Reference](docs/api-reference.md)** — Complete function signatures, types, and options
+- **[Practical Guide](https://github.com/ayanworks/did-x509/blob/main/typescript/docs/practical-guide.md)** — Real-world workflows: cert-to-DID extraction, issuing, verifying, trust registries
+- **[Getting Started](https://github.com/ayanworks/did-x509/blob/main/typescript/docs/getting-started.md)** — Installation, basic usage, encoding utilities
+- **[API Reference](https://github.com/ayanworks/did-x509/blob/main/typescript/docs/api-reference.md)** — Complete function signatures, types, and options
 
 ## License
 

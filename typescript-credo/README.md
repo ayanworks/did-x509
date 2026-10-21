@@ -124,9 +124,9 @@ It is **off by default**: without it, resolution output is identical to the
 reference resolver.
 
 Both options are exercised end to end in
-[`examples/05-credo-askar.ts`](../examples/05-credo-askar.ts), which imports a
-did:x509 identity into an Askar-backed wallet and signs a credential with it.
-That example is Node-only, because Askar is a native addon.
+[`examples/05-credo-askar.ts`](https://github.com/ayanworks/did-x509/blob/main/examples/05-credo-askar.ts),
+which imports a did:x509 identity into an Askar-backed wallet and signs a
+credential with it. That example is Node-only, because Askar is a native addon.
 
 ## Credo integration example (agent-controller)
 

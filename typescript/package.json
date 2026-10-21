@@ -12,10 +12,19 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
+    },
+    "./cli": {
+      "import": "./dist/cli.js",
+      "require": "./dist/cli.cjs",
+      "default": "./dist/cli.js"
     }
+  },
+  "bin": {
+    "didx509": "./dist/cli.js"
   },
   "files": [
     "dist",
+    "docs",
     "README.md",
     "LICENSE"
   ],

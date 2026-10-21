@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Copyright (c) AyanWorks. Licensed under the MIT License.
 // Original did:x509 specification by Microsoft Corporation.
 
@@ -10,6 +11,9 @@
  *   encode <string>
  */
 
+// The CLI is its own entry point, so it does not pass through `index.ts` and
+// must load the polyfill itself — `@peculiar/x509` needs it before `tsyringe`.
+import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { resolveDidFromPem, convertChain } from './didx509.js';
 import { pctEncode } from './encoding.js';
