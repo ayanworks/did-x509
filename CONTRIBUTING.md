@@ -80,8 +80,17 @@ lists tags that have been pushed. `publish.yml` creates the release for you
 after a successful publish with `gh release create`, so the release page and
 the published version cannot drift apart.
 
-Only tag one package per release. Publish `@didx509/core` before
-`@didx509/credo`, since credo depends on it.
+Two ordering rules that matter:
+
+- **Merge before tagging.** The release notes link to the package's
+  `CHANGELOG.md` on `main`, so the changelog has to be merged before the tag
+  is pushed or the link in the release notes is a 404.
+- **Tag only one package per release.** Publish `@didx509/core` before
+  `@didx509/credo`, since credo depends on it.
+
+The release is a separate job from the publish, so if creating the release
+fails you can re-run just that job. A re-run of the whole workflow would stop
+at `npm publish` instead, because the version is already on npm.
 
 #### When a `core` change forces a `credo` release
 

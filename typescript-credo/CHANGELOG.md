@@ -1,19 +1,22 @@
 # Changelog
 
-All notable changes to `@didx509/credo` are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-Entries link to the pull requests that made the change. Each release is tagged
-`credo-v<version>` in the repository, and the matching GitHub release carries the
-same notes.
+All notable changes to `@didx509/credo` are documented here. The package
+follows [Semantic Versioning](https://semver.org/).
 
 `@didx509/credo` depends on `@didx509/core`, so a breaking change in `core`
 requires a matching release here — see
-[CONTRIBUTING.md](../CONTRIBUTING.md#releasing).
+[CONTRIBUTING.md](../CONTRIBUTING.md#cutting-a-release).
 
-## [0.1.0] - 2026-10-21
+## [0.1.0] — 2026-10-21
 
-The first release.
+First release.
 
-[0.1.0]: https://github.com/ayanworks/did-x509/releases/tag/credo-v0.1.0
+### Added
+
+- `X509DidResolver` — a Credo `DidResolver` for `did:x509`, usable with
+  `DidsModule`.
+- Resolution through `@didx509/core`, with `@didx509/native` used
+  automatically when it is installed.
+- The `implementation` option (`'auto' | 'native' | 'core'`) to choose the
+  resolver engine.
+- The `jsonWebKey2020VerificationMethod` option, off by default.

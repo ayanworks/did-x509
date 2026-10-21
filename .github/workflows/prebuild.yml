@@ -219,3 +219,39 @@ jobs:
         working-directory: typescript-native
         # Trusted publishing (OIDC): no token. See publish.yml for details.
         run: npm publish --access public
+
+  # The native package gets a GitHub release for the same reason the other two
+  # do: a release page that cannot drift from the published version. It is a
+  # separate job so it can be re-run on its own — a failure here would
+  # otherwise fail the package job, and re-running would stop at
+  # `npm publish` with "cannot publish over the previously published versions".
+  release:
+    name: Release ${{ github.ref_name }}
+    needs: package
+    if: always() && needs.package.result == 'success' && startsWith(github.ref, 'refs/tags/native-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(node -p "require('./typescript-native/package.json').version")"
+          # Re-runnable: a release that already exists is left alone.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it as it is."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "@didx509/native v$version" \
+            --latest=false \
+            --notes "Published to npm: https://www.npmjs.com/package/@didx509/native/v/$version
+
+          Each \`@didx509/*\` package versions independently, so see the
+          [per-package changelog](https://github.com/${{ github.repository }}/blob/main/typescript-native/CHANGELOG.md)
+          and the npm page above for what changed."
