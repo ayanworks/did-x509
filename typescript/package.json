@@ -20,7 +20,7 @@
     }
   },
   "bin": {
-    "didx509": "./dist/cli.js"
+    "didx509": "dist/cli.js"
   },
   "files": [
     "dist",
