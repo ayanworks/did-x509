@@ -17,9 +17,14 @@
  */
 
 import { FLOWS, runAll, type FlowName, type FlowResult } from './flows.ts';
+import {
+  CREDO_LAST_STEP,
+  type CredoStep,
+} from './credo-agent.ts';
 import { STUDIO_SCRIPT } from './studio-script.ts';
 import {
   credentialCatalogue,
+  capabilityMatrix,
   generateOptions,
   identityFromRequest,
   studioGenerate,
@@ -70,6 +75,20 @@ function readCookie(header: string | null, name: string): string | undefined {
     if (key === name) return rest.join('=');
   }
   return undefined;
+}
+
+/**
+ * Clamp a requested Credo step to the supported 1-7 range.
+ *
+ * An absent or unusable value means "run the whole flow", which keeps the
+ * original single-call behaviour for callers that do not care about steps.
+ */
+function clampStep(value: unknown): CredoStep {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return CREDO_LAST_STEP;
+  const step = Math.trunc(value);
+  if (step < 1) return 1;
+  if (step > CREDO_LAST_STEP) return CREDO_LAST_STEP;
+  return step as CredoStep;
 }
 
 /**
@@ -137,7 +156,11 @@ export async function handleRequest(request: Request): Promise<Response> {
   // The catalogue and options are static; the four operations each take a thin
   // JSON body. Nothing is retained between requests.
   if (path === '/api/catalogue' && request.method === 'GET') {
-    return json({ credentials: credentialCatalogue(), options: generateOptions() });
+    return json({
+      credentials: credentialCatalogue(),
+      options: generateOptions(),
+      capabilityMatrix: capabilityMatrix(),
+    });
   }
 
   if (path === '/api/generate' && request.method === 'POST') {
@@ -192,14 +215,19 @@ export async function handleRequest(request: Request): Promise<Response> {
       chainPem: string;
       keyPem: string;
       didSubjectAttribute?: SubjectAttribute;
+      /** Run only up to this step. Omitted means the whole flow. */
+      through?: number;
     }>(request);
     const sid = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
     return serialize(async () => {
       // Parsed inside the guard: a bad chain or a missing key is the caller's
       // error and should come back as a readable 400, not a crash.
       const identity = await identityFromRequest(payload);
+      // Clamped rather than trusted: an out-of-range step would otherwise
+      // silently run nothing and return a result with no steps in it.
+      const through = clampStep(payload.through);
       const { runCredoAgent } = await import('./credo-session.ts');
-      const { result, setCookie } = await runCredoAgent(sid, identity);
+      const { result, setCookie } = await runCredoAgent(sid, identity, through);
       const headers = new Headers(JSON_HEADERS);
       if (setCookie) headers.append('set-cookie', setCookie);
       return new Response(JSON.stringify({ result }, null, 2), {
@@ -594,6 +622,29 @@ const HTML = `<!doctype html>
   /* De-emphasised text, e.g. withheld claims in the verification detail. */
   .muted { color: var(--muted); }
 
+  /* Capability matrix -------------------------------------------------- */
+  /* A collapsible reference table: out of the way until wanted, but one click
+     from the key-type form it explains. */
+  .matrix { margin: 0 0 1.5rem; border: 1px solid var(--line-soft); border-radius: .5rem; background: rgba(255,255,255,.02); }
+  .matrix > summary { cursor: pointer; list-style: none; padding: .7rem .9rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; }
+  .matrix > summary::-webkit-details-marker { display: none; }
+  .matrix > summary::before { content: "▸"; color: var(--gold-400); font-size: .8rem; }
+  .matrix[open] > summary::before { content: "▾"; }
+  .matrix-title { font-weight: 600; font-size: .92rem; }
+  .matrix-body { padding: 0 .9rem 1rem; overflow-x: auto; }
+  table.caps { border-collapse: collapse; width: 100%; font-size: .82rem; }
+  table.caps th, table.caps td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  table.caps th { color: var(--muted); font-weight: 600; font-size: .74rem; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  table.caps td.key { white-space: nowrap; }
+  table.caps td.key b { font-weight: 600; }
+  table.caps td.key small { display: block; color: var(--muted); font-size: .74rem; }
+  /* A per-cell verdict pill, with the algorithm named when it works. */
+  .cap { display: inline-block; font-size: .72rem; font-weight: 700; padding: .14rem .4rem; border-radius: .3rem; white-space: nowrap; }
+  .cap.yes { background: rgba(16, 185, 129, .16); color: #4ade80; }
+  .cap.no { background: rgba(220, 66, 39, .14); color: #fca5a5; }
+  .cap.spec { background: rgba(255, 255, 255, .06); color: var(--muted); }
+  .cap-why { display: block; color: var(--muted); font-size: .74rem; margin-top: .25rem; max-width: 24rem; }
+
   /* Footer ------------------------------------------------------------- */
   footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line); font-size: .84rem; color: var(--muted); }
   footer p { margin: 0 0 .5rem; }
@@ -635,6 +686,19 @@ const HTML = `<!doctype html>
     credential, then verify it and recover the issuer from the credential itself.
     Parsing is per-request: nothing you paste is stored.
   </p>
+
+  <!-- capability matrix --------------------------------------------------- -->
+  <details class="matrix" id="capability-matrix">
+    <summary>
+      <span class="matrix-title">Which key type signs which credential format</span>
+      <span class="note" style="margin:0">signing algorithms, per spec and as implemented</span>
+    </summary>
+    <div class="matrix-body" id="capability-matrix-body">
+      <p class="note" style="margin:0 0 .8rem">
+        Loading…
+      </p>
+    </div>
+  </details>
 
   <!-- 1 ------------------------------------------------------------------ -->
   <div class="step" id="step-1" data-done="false">
@@ -763,42 +827,72 @@ const HTML = `<!doctype html>
     <div class="step locked" id="credo-step-1" data-done="false">
       <div class="step-head"><span class="step-num">1</span><h2>Start a Credo Agent</h2></div>
       <p class="hint">A real <code>Agent</code> with an in-memory Askar wallet, created for this browser session only.</p>
-      <div class="body"><div id="credo-1-out"><p class="note">Load a chain first.</p></div></div>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action step-run" id="btn-credo-step-1" disabled>Run this step</button>
+        </div>
+        <div id="credo-1-out"><p class="note">Load a chain first.</p></div>
+      </div>
     </div>
 
     <!-- 2 -->
     <div class="step locked" id="credo-step-2" data-done="false">
       <div class="step-head"><span class="step-num">2</span><h2>Resolve the DID through the Agent</h2></div>
       <p class="hint"><code>agent.dids.resolve(did, { x509chain })</code> — the chain is the trust anchor, so it travels with every call.</p>
-      <div class="body"><div id="credo-2-out"><p class="note">Resolve a chain first.</p></div></div>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action step-run" id="btn-credo-step-2" disabled>Run this step</button>
+        </div>
+        <div id="credo-2-out"><p class="note">Resolve a chain first.</p></div>
+      </div>
     </div>
 
     <!-- 3 -->
     <div class="step locked" id="credo-step-3" data-done="false">
       <div class="step-head"><span class="step-num">3</span><h2>Import the certificate key</h2></div>
       <p class="hint">The leaf certificate's private key goes into the Askar wallet; the wallet's copy is compared against the certificate.</p>
-      <div class="body"><div id="credo-3-out"><p class="note">Resolve a chain first.</p></div></div>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action step-run" id="btn-credo-step-3" disabled>Run this step</button>
+        </div>
+        <div id="credo-3-out"><p class="note">Resolve a chain first.</p></div>
+      </div>
     </div>
 
     <!-- 4 -->
     <div class="step locked" id="credo-step-4" data-done="false">
       <div class="step-head"><span class="step-num">4</span><h2>Bind the DID to the key</h2></div>
       <p class="hint"><code>agent.dids.import({ did, didDocument, keys })</code> — the DID document now names a key the wallet holds.</p>
-      <div class="body"><div id="credo-4-out"><p class="note">Import a key first.</p></div></div>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action step-run" id="btn-credo-step-4" disabled>Run this step</button>
+        </div>
+        <div id="credo-4-out"><p class="note">Import a key first.</p></div>
+      </div>
     </div>
 
     <!-- 5 -->
     <div class="step locked" id="credo-step-5" data-done="false">
       <div class="step-head"><span class="step-num">5</span><h2>What is in the wallet</h2></div>
       <p class="hint">Read back from the wallet — the DID and the key type Askar is actually holding.</p>
-      <div class="body"><div id="credo-5-out"><p class="note">Import the DID first.</p></div></div>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action step-run" id="btn-credo-step-5" disabled>Run this step</button>
+        </div>
+        <div id="credo-5-out"><p class="note">Import the DID first.</p></div>
+      </div>
     </div>
 
     <!-- 6 -->
     <div class="step locked" id="credo-step-6" data-done="false">
       <div class="step-head"><span class="step-num">6</span><h2>Issue a credential</h2></div>
       <p class="hint">An SD-JWT VC signed by the <b>wallet-managed key</b>, with <code>iss</code> = the did:x509 DID. The certificate key never leaves the wallet.</p>
-      <div class="body"><div id="credo-6-out"><p class="note">Bind the DID first.</p></div></div>
+      <div class="body">
+        <div class="row" style="margin:0 0 .6rem">
+          <button class="action step-run" id="btn-credo-step-6" disabled>Run this step</button>
+        </div>
+        <div id="credo-6-out"><p class="note">Bind the DID first.</p></div>
+      </div>
     </div>
 
     <!-- 7 -->
@@ -807,7 +901,7 @@ const HTML = `<!doctype html>
       <p class="hint">The verifier re-resolves the DID from the chain, then checks the signature — the holder discloses one claim and withholds another.</p>
       <div class="body">
         <div class="row" style="margin:0 0 .6rem">
-          <button class="action" id="btn-credo-verify" disabled>Verify credential</button>
+          <button class="action step-run" id="btn-credo-verify" disabled>Run this step</button>
         </div>
         <div id="credo-7-out"><p class="note">Issue a credential first.</p></div>
       </div>

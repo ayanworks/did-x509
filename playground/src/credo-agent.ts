@@ -47,6 +47,17 @@ import { NativeAskar } from '@openwallet-foundation/askar-nodejs';
 import { X509DidResolver } from '@didx509/credo';
 import type { SigningIdentity } from './lib/identity.ts';
 
+/**
+ * The Credo tab's steps, as a number.
+ *
+ * A run can stop at any of these so the UI can offer one button per step; a
+ * partial run leaves the later entries absent.
+ */
+export type CredoStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+/** The last step, for callers that want the whole flow. */
+export const CREDO_LAST_STEP: CredoStep = 7;
+
 /** Everything the Credo tab needs to render, per step. */
 export interface CredoAgentResult {
   /** 1 — the agent started and a wallet was opened. */
@@ -58,7 +69,7 @@ export interface CredoAgentResult {
     backend: string;
   };
   /** 2 — the chain resolved through the agent's own resolver registry. */
-  resolution: {
+  resolution?: {
     did: string;
     verificationMethodId: string;
     /** `JsonWebKey2020` — rewritten for Credo, see the note above. */
@@ -68,25 +79,25 @@ export interface CredoAgentResult {
     implementation: string;
   };
   /** 3 — the certificate's key, imported into the wallet. */
-  import: {
+  import?: {
     kmsKeyId: string;
     keyType: string;
     /** Whether the wallet's copy of the key equals the certificate's. */
     keyMatchesCertificate: boolean;
   };
   /** 4 — the DID + key binding stored in the wallet. */
-  binding: {
+  binding?: {
     did: string;
     kmsKeyId: string;
     didDocumentRelativeKeyId: string;
   };
   /** 5 — what is actually in the wallet now. */
-  wallet: {
+  wallet?: {
     dids: string[];
     storedKeyType: string;
   };
   /** 6 — the credential, signed by the wallet-managed key. */
-  issuance: {
+  issuance?: {
     compact: string;
     issuer: string;
     keyId: string;
@@ -94,7 +105,7 @@ export interface CredoAgentResult {
     signedByWalletKey: boolean;
   };
   /** 7 — verification, with the DID re-resolved from the chain. */
-  verification: {
+  verification?: {
     valid: boolean;
     error?: string;
     disclosed: Record<string, unknown>;
@@ -197,12 +208,22 @@ export class CredoSession {
   }
 
   /**
-   * Run the whole flow against one chain, in the order the Credo tab shows it.
+   * Run the flow against one chain, stopping after step `through`.
    *
    * Every value returned is read back out of the wallet or the resolver — none
    * of it is echoed from the request.
+   *
+   * `through` exists so the UI can offer a button per step: step 4's button
+   * runs steps 1-4 and returns the same shape with the later entries absent.
+   * Each step therefore does real work rather than merely revealing something
+   * computed earlier, and there is still one sequence — the same one that
+   * "Run all seven steps" uses — instead of seven divergent code paths that
+   * could drift apart.
    */
-  async run(identity: SigningIdentity): Promise<CredoAgentResult> {
+  async run(
+    identity: SigningIdentity,
+    through: CredoStep = 7
+  ): Promise<CredoAgentResult> {
     if (!identity.leafPrivateJwk) {
       throw new Error(
         'The Credo flow imports the certificate key, so the chain needs its leaf private key.'
@@ -215,6 +236,8 @@ export class CredoSession {
       storage: 'sqlite (in-memory)' as const,
       backend: 'askar (native ffi)',
     };
+    const result: CredoAgentResult = { agent: agentInfo };
+    if (through < 2) return result;
 
     // --- 2. resolve through the agent's own resolver registry -------------
     // Remember the chain first: verification below re-resolves the DID
@@ -237,6 +260,16 @@ export class CredoSession {
     if (!method) {
       throw new Error('The resolved DID document has no verification method.');
     }
+    result.resolution = {
+      did: didDocument.id,
+      verificationMethodId: method.id,
+      verificationMethodType: String(method.type),
+      didDocument: JSON.parse(JSON.stringify(didDocument)),
+      // Which engine behind @didx509/credo answered. 'core' unless
+      // @didx509/native is installed.
+      implementation: this.resolver.usedImplementation ?? 'core',
+    };
+    if (through < 3) return result;
 
     // --- 3. import the certificate's key into the wallet ------------------
     // Credo brands its private JWKs by kty; the DOM `JsonWebKey` the identity
@@ -262,6 +295,12 @@ export class CredoSession {
       storedPublic.crv === expectedKey.crv &&
       storedPublic.x === expectedKey.x &&
       storedPublic.y === expectedKey.y;
+    result.import = {
+      kmsKeyId,
+      keyType: `${storedPublic.kty} ${storedPublic.crv}`.trim(),
+      keyMatchesCertificate,
+    };
+    if (through < 4) return result;
 
     // --- 4. bind the DID to that key --------------------------------------
     const didDocumentRelativeKeyId = method.id.replace(didDocument.id, '');
@@ -271,18 +310,20 @@ export class CredoSession {
       keys: [{ kmsKeyId, didDocumentRelativeKeyId }],
       overwrite: true,
     });
-    const binding = {
+    result.binding = {
       did: identity.did,
       kmsKeyId,
       didDocumentRelativeKeyId,
     };
+    if (through < 5) return result;
 
     // --- 5. read it back out of the wallet --------------------------------
     const stored = await this.agent.dids.getCreatedDids({ method: 'x509' });
-    const wallet = {
+    result.wallet = {
       dids: stored.map(record => record.did),
       storedKeyType: `${storedPublic.kty} ${storedPublic.crv}`.trim(),
     };
+    if (through < 6) return result;
 
     // --- 6. issue a credential signed by the wallet key -------------------
     // The issuer is a DID URL *with* the fragment: Credo walks the DID
@@ -299,6 +340,15 @@ export class CredoSession {
       issuer: { method: 'did', didUrl: method.id },
       disclosureFrame: { _sd: ['email', 'ssn'] },
     });
+    result.issuance = {
+      compact: signed.compact,
+      issuer: method.id,
+      keyId: method.id,
+      // The signature came from the KMS key bound to this DID, not from a
+      // key the caller supplied — that is what makes this a wallet flow.
+      signedByWalletKey: true,
+    };
+    if (through < 7) return result;
 
     // --- 7. verify, disclosing one claim and withholding the other --------
     const presentation = await this.agent.sdJwtVc.present({
@@ -323,42 +373,16 @@ export class CredoSession {
     const allKeys = ['email', 'ssn'];
     const withheld = allKeys.filter(key => !(key in disclosed));
 
-    return {
-      agent: agentInfo,
-      resolution: {
-        did: didDocument.id,
-        verificationMethodId: method.id,
-        verificationMethodType: String(method.type),
-        didDocument: JSON.parse(JSON.stringify(didDocument)),
-        // Which engine behind @didx509/credo answered. 'core' unless
-        // @didx509/native is installed.
-        implementation: this.resolver.usedImplementation ?? 'core',
-      },
-      import: {
-        kmsKeyId,
-        keyType: `${storedPublic.kty} ${storedPublic.crv}`.trim(),
-        keyMatchesCertificate,
-      },
-      binding,
-      wallet,
-      issuance: {
-        compact: signed.compact,
-        issuer: method.id,
-        keyId: method.id,
-        // The signature came from the KMS key bound to this DID, not from a
-        // key the caller supplied — that is what makes this a wallet flow.
-        signedByWalletKey: true,
-      },
-      verification: {
-        valid: verification.isValid,
-        error: verification.isValid
-          ? undefined
-          : String(verification.error?.message ?? 'verification failed'),
-        disclosed,
-        withheld,
-        trustedIssuer: method.id,
-      },
+    result.verification = {
+      valid: verification.isValid,
+      error: verification.isValid
+        ? undefined
+        : String(verification.error?.message ?? 'verification failed'),
+      disclosed,
+      withheld,
+      trustedIssuer: method.id,
     };
+    return result;
   }
 
   async shutdown(): Promise<void> {

@@ -24,7 +24,7 @@ export const STUDIO_SCRIPT = String.raw`
 
   // The last loaded identity, held client-side only.
   let identity = null;
-  let catalogue = { credentials: [], options: { algorithms: [], subjectAttributes: [] } };
+  let catalogue = { credentials: [], options: { algorithms: [], subjectAttributes: [] }, capabilityMatrix: null };
   let signed = null;
 
   async function api(path, body) {
@@ -162,13 +162,66 @@ export const STUDIO_SCRIPT = String.raw`
     if (formats.length === 0) {
       select.innerHTML = '<option value="">— none —</option>';
       $('btn-sign').disabled = true;
-      // Say *why*: the key type, not the credential, is the blocker.
-      $('vc-hint').innerHTML = 'This identity\u2019s key (' + esc(identity.keyType || '?')
-        + ') cannot sign any format offered for this credential.';
+      // Say *why*, and distinguish the two possible reasons. "The spec does not
+      // allow this key type" and "our COSE library cannot carry this key" are
+      // different problems with different fixes, so the hint names which one.
+      const keyType = identity.keyType || (identity.leafPublicJwk && identity.leafPublicJwk.kty) || '?';
+      const offered = template.formats
+        .map(f => capabilityNote(keyType, f))
+        .filter(Boolean);
+      $('vc-hint').innerHTML = 'This identity\u2019s key (' + esc(keyType)
+        + ') cannot sign any format offered for this credential.'
+        + (offered.length ? ' ' + esc(offered[0]) : '');
       return;
     }
     $('btn-sign').disabled = false;
     populateClaims();
+  }
+
+  /**
+   * The reason a key type cannot sign a format, if the matrix has one.
+   *
+   * Reads the same data the capability table renders, so the inline hint and
+   * the reference table always agree.
+   */
+  function capabilityNote(keyType, format) {
+    const matrix = catalogue.capabilityMatrix;
+    if (!matrix) return '';
+    const row = matrix.rows.find(r => r.genAlgorithm === keyType);
+    if (!row) return '';
+    const cell = row.cells.find(c => c.format === format);
+    return cell && cell.why ? cell.why : '';
+  }
+
+  /** Render the capability matrix: which key type signs which format. */
+  function renderCapabilityMatrix() {
+    const matrix = catalogue.capabilityMatrix;
+    const host = $('capability-matrix-body');
+    if (!host || !matrix) return;
+    const head = '<tr><th>Key type</th>'
+      + matrix.formats.map(f => '<th>' + esc(f.id) + '</th>').join('')
+      + '<th>Credo / Askar</th></tr>';
+    const rows = matrix.rows.map(row =>
+      '<tr><td class="key"><b>' + esc(row.label) + '</b><small>' + esc(row.description) + '</small></td>'
+      + row.cells.map(cell =>
+          '<td><span class="cap ' + (cell.verdict === 'yes' ? 'yes' : cell.verdict === 'spec' ? 'spec' : 'no') + '">'
+          + esc(cell.label) + '</span>'
+          + (cell.why ? '<span class="cap-why">' + esc(cell.why) + '</span>' : '')
+          + '</td>').join('')
+      // The Credo column answers a different question from the format columns:
+      // not "can this be signed" but "can Askar hold this key at all".
+      + '<td><span class="cap ' + (row.credo.supported ? 'yes' : 'no') + '">'
+      + (row.credo.supported ? 'supported' : 'unsupported') + '</span>'
+      + (row.credo.reason ? '<span class="cap-why">' + esc(row.credo.reason) + '</span>' : '')
+      + '</td>'
+      + '</tr>').join('');
+    const notes = matrix.formats.map(f =>
+      '<p class="note" style="margin:.4rem 0 0"><b>' + esc(f.id)
+      + '</b> — allowed by spec: <code>' + esc(f.spec) + '</code>. ' + esc(f.note) + '</p>').join('')
+      + '<p class="note" style="margin:.6rem 0 0"><b>Credo / Askar</b> — the Credo flow imports the '
+      + 'private key into an Askar wallet, which accepts only EC (P-256, P-384) and OKP (Ed25519) keys. '
+      + 'The Certificate Studio signs in-process, so it is not bound by this.</p>';
+    host.innerHTML = '<table class="caps">' + head + rows + '</table>' + notes;
   }
 
   function populateClaims() {
@@ -368,7 +421,6 @@ export const STUDIO_SCRIPT = String.raw`
 
   function resetCredo() {
     credoResult = null;
-    $('btn-credo-verify').disabled = true;
     // Each step keeps its own "what to do first" line, so the panel reads as a
     // sequence rather than seven identical placeholders.
     const pending = {
@@ -386,8 +438,36 @@ export const STUDIO_SCRIPT = String.raw`
       if (out) out.innerHTML = '<p class="note">' + pending[n] + '</p>';
     }
     $('credo-run-out').innerHTML = '';
-    $('btn-credo-run').disabled = !identity;
     syncCredoSource();
+  }
+
+  /**
+   * Enable or disable the per-step buttons.
+   *
+   * Every step button runs the flow from step 1 up to that step, so any of them
+   * can be pressed as soon as a usable chain is loaded — there is no need to
+   * walk them in order. That also means pressing step 4 straight after loading
+   * a chain is a complete, honest action rather than a failure: the server runs
+   * steps 1-4, which is exactly what step 4 depends on.
+   */
+  function syncCredoButtons() {
+    const canRun = Boolean(identity) && Boolean(identity.keyPresent)
+      && credoAvailable === true && !credoRunning && !credoKeyUnsupported();
+    const done = n => $('credo-step-' + n).dataset.done === 'true';
+    for (let n = 1; n <= 6; n++) {
+      const btn = $('btn-credo-step-' + n);
+      if (!btn) continue;
+      btn.disabled = !canRun;
+      // A step already done stays runnable: re-running it is a valid way to
+      // pick the flow back up after the wallet has been reset.
+      btn.textContent = done(n) ? 'Run again' : 'Run this step';
+    }
+    const verify = $('btn-credo-verify');
+    if (verify) {
+      verify.disabled = !canRun || !(credoResult && credoResult.issuance);
+      verify.textContent = done(7) ? 'Verify again' : 'Run this step';
+    }
+    $('btn-credo-run').disabled = !canRun;
   }
 
   /** Reflect whether the Studio has a chain the Credo tab can use. */
@@ -398,17 +478,66 @@ export const STUDIO_SCRIPT = String.raw`
       pill.className = 'pill neutral';
       pill.textContent = 'no chain loaded';
       note.textContent = 'Load a chain in the Certificate Studio tab to begin.';
+      syncCredoButtons();
       return;
     }
+    const canSign = Boolean(identity.keyPresent);
+
+    // The Credo flow hands the key to Askar, which is far pickier than the
+    // Studio's in-process signing. Check the key type first: a P-521 or RSA
+    // chain is perfectly fine for the Studio but cannot enter the wallet, and
+    // saying so here is better than failing partway through step 3.
+    const credoSupport = credoSupportFor();
+    if (credoSupport && !credoSupport.supported) {
+      pill.className = 'pill bad';
+      pill.textContent = 'key not supported by Credo';
+      note.innerHTML = '<code>' + esc(identity.did) + '</code> — '
+        + esc(credoSupport.reason)
+        + ' Switch to the <b>Certificate Studio</b> tab to sign with this key;'
+        + ' the Credo tab needs P-256, P-384 or Ed25519.';
+      syncCredoButtons();
+      return;
+    }
+
     pill.className = 'pill ok';
     pill.textContent = 'chain loaded';
-    const canSign = Boolean(identity.keyPresent);
     note.innerHTML = '<code>' + esc(identity.did) + '</code>'
       + (canSign
-          ? ' — with its leaf private key, so all seven steps can run.'
+          ? ' — with its leaf private key. Run the steps one at a time below, or all seven at once.'
           : ' — <b>no private key</b>, so the key import and signing steps cannot run. '
             + 'Upload the key, or use <b>Generate test CA</b> in the Studio.');
-    $('btn-credo-run').disabled = !canSign || credoRunning;
+    syncCredoButtons();
+  }
+
+  /** Whether the loaded chain's key type is one the Credo flow cannot import. */
+  function credoKeyUnsupported() {
+    const support = credoSupportFor();
+    return Boolean(support && !support.supported);
+  }
+
+  /**
+   * The Credo compatibility entry for the loaded identity, from the matrix.
+   *
+   * Prefers the leaf JWK over the display label: a generated identity reports
+   * "RSA-2048" while an uploaded one reports something like "EC P-521", so
+   * matching on the JWK's kty/crv gives one answer for both paths.
+   */
+  function credoSupportFor() {
+    const matrix = catalogue.capabilityMatrix;
+    if (!matrix || !identity) return null;
+    const jwk = identity.leafPublicJwk;
+    const keyType = identity.keyType || '';
+    const row = matrix.rows.find(r => {
+      if (jwk && jwk.kty) {
+        // Match on the harvested JWK first — it is the same fact the crypto
+        // layer will act on, unlike the human-readable label.
+        const label = r.label || '';
+        if (jwk.kty === 'RSA') return label.startsWith('RSA');
+        if (jwk.crv) return label.indexOf(jwk.crv) !== -1;
+      }
+      return r.genAlgorithm === keyType;
+    });
+    return row ? row.credo : null;
   }
 
   function credoIdentityPayload() {
@@ -434,7 +563,14 @@ export const STUDIO_SCRIPT = String.raw`
     return credoAvailable;
   }
 
-  /** Render one step's body from the run result. */
+  /**
+   * Render one step's body from the run result.
+   *
+   * A result can stop early — pressing step 3 returns steps 1-3 only — so each
+   * block runs only when its step is present. Steps beyond the stopping point
+   * keep whatever the previous render left, which is what lets you run step by
+   * step and watch the panel fill in.
+   */
   function renderCredoSteps(result) {
     const kv = rows => '<dl class="kv">' + rows.map(([k, v]) =>
       '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>').join('') + '</dl>';
@@ -451,6 +587,7 @@ export const STUDIO_SCRIPT = String.raw`
       + '<p class="note">The wallet is per-browser and in-memory — it disappears when this session ends.</p>';
     setCredoStep(1, 'done');
 
+    if (!result.resolution) return;
     // 2 — resolution
     const doc = result.resolution.didDocument || {};
     $('credo-2-out').innerHTML =
@@ -467,6 +604,7 @@ export const STUDIO_SCRIPT = String.raw`
       + esc(JSON.stringify(doc, null, 2)) + '</pre></details>';
     setCredoStep(2, 'done');
 
+    if (!result.import) return;
     // 3 — key import
     const matches = result.import.keyMatchesCertificate;
     $('credo-3-out').innerHTML =
@@ -481,6 +619,7 @@ export const STUDIO_SCRIPT = String.raw`
       + 'It was compared against the certificate\u2019s public key to confirm they are the same key.</p>';
     setCredoStep(3, 'done');
 
+    if (!result.binding) return;
     // 4 — binding
     $('credo-4-out').innerHTML =
       '<div class="row steps-ok"><span class="pill ok">DID + key binding stored</span></div>'
@@ -493,6 +632,7 @@ export const STUDIO_SCRIPT = String.raw`
       + 'the DID document, plus which wallet key backs its verification method.</p>';
     setCredoStep(4, 'done');
 
+    if (!result.wallet) return;
     // 5 — wallet contents
     $('credo-5-out').innerHTML =
       '<div class="row steps-ok"><span class="pill ok">' + result.wallet.dids.length
@@ -502,6 +642,7 @@ export const STUDIO_SCRIPT = String.raw`
           '<dt>DID</dt><dd>' + esc(d) + '</dd>').join('') + '</dl>';
     setCredoStep(5, 'done');
 
+    if (!result.issuance) return;
     // 6 — issuance
     $('credo-6-out').innerHTML =
       '<div class="row steps-ok"><span class="pill ok">signed by the wallet key</span>'
@@ -520,31 +661,57 @@ export const STUDIO_SCRIPT = String.raw`
     $('credo-7-out').innerHTML =
       '<p class="note">Credential ready. Run the verifier to check it against the re-resolved DID.</p>';
     setCredoStep(7, 'open');
-    $('btn-credo-verify').disabled = false;
     $('btn-credo-verify').dataset.ready = 'true';
+    syncCredoButtons();
   }
 
-  async function runCredoFlow() {
+  /**
+   * Run the Credo flow up to the given step and render what came back.
+   *
+   * Shared by the per-step buttons and by "Run all seven steps": the only
+   * difference is the stopping point, so there is one request path and one
+   * render path rather than two that could disagree.
+   */
+  async function runCredoFlow(through) {
     if (!identity) { fail('credo-run-out', 'Load a chain in the Certificate Studio tab first.'); return; }
     if (!identity.keyPresent) {
       fail('credo-run-out', 'This chain has no private key, so the Credo flow cannot import it.');
       return;
     }
+    if (credoKeyUnsupported()) {
+      fail('credo-run-out', 'This chain\u2019s key type cannot be imported by the Credo wallet. '
+        + 'Use the Certificate Studio tab to sign with it instead.');
+      return;
+    }
     if (!(await credoStatus())) return;
 
     credoRunning = true;
-    $('btn-credo-run').disabled = true;
-    $('credo-run-out').innerHTML = '<p class="note">Starting a Credo Agent and running all seven steps…</p>';
+    syncCredoButtons();
+    const scope = through >= 7
+      ? 'Starting a Credo Agent and running all seven steps…'
+      : 'Running steps 1 to ' + through + '…';
+    $('credo-run-out').innerHTML = '<p class="note">' + scope + '</p>';
+    // The step being run announces itself; steps before it are shown as done by
+    // the render that follows.
+    setCredoStep(through, 'open');
     try {
-      const { result } = await api('/api/credo-agent/run', credoIdentityPayload());
+      const { result } = await api('/api/credo-agent/run', {
+        ...credoIdentityPayload(),
+        through,
+      });
       credoResult = result;
       renderCredoSteps(result);
+      // A full run already did the verification work, so show its result rather
+      // than the "press verify" placeholder the render leaves behind.
+      if (result.verification) renderCredoVerification(result);
       $('credo-run-out').innerHTML = '';
     } catch (e) {
       fail('credo-run-out', 'Credo flow failed: ' + e.message);
+      // Leave the step marked open so it is obvious where it stopped.
+      setCredoStep(through, 'open');
     } finally {
       credoRunning = false;
-      $('btn-credo-run').disabled = false;
+      syncCredoButtons();
     }
   }
 
@@ -578,19 +745,38 @@ export const STUDIO_SCRIPT = String.raw`
     setCredoStep(7, 'done');
   }
 
-  $('btn-credo-run').addEventListener('click', runCredoFlow);
+  $('btn-credo-run').addEventListener('click', () => runCredoFlow(7));
+
+  // One button per step. Each runs steps 1..N, so pressing any of them is a
+  // complete action and the panel fills in from the top.
+  for (let n = 1; n <= 6; n++) {
+    const btn = $('btn-credo-step-' + n);
+    if (btn) btn.addEventListener('click', () => runCredoFlow(n));
+  }
 
   $('btn-credo-verify').addEventListener('click', async () => {
-    if (!credoResult) { fail('credo-7-out', 'Run the flow first.'); return; }
+    if (!identity) { fail('credo-7-out', 'Load a chain in the Certificate Studio tab first.'); return; }
     setCredoStep(7, 'open');
-    $('btn-credo-verify').disabled = true;
+    syncCredoButtons();
     $('credo-7-out').innerHTML = '<p class="note">Re-resolving the DID and verifying…</p>';
     try {
-      renderCredoVerification(credoResult);
+      // Verification is step 7 itself, not a re-render of something a previous
+      // run cached: the server re-resolves the DID from the chain and checks the
+      // signature on every press, which is the point of having the button at
+      // all. So this always requests steps 1-7; earlier steps are cheap and the
+      // work up to step 6 is what produces the credential being verified.
+      const { result } = await api('/api/credo-agent/run', {
+        ...credoIdentityPayload(),
+        through: 7,
+      });
+      credoResult = result;
+      renderCredoSteps(result);
+      if (result.verification) renderCredoVerification(result);
     } catch (e) {
       fail('credo-7-out', e.message);
+      setCredoStep(7, 'open');
     } finally {
-      $('btn-credo-verify').disabled = false;
+      syncCredoButtons();
     }
   });
 
@@ -632,6 +818,8 @@ export const STUDIO_SCRIPT = String.raw`
       $('up-attr').innerHTML = attrOptions;
       $('vc-template').innerHTML = catalogue.credentials.map(c =>
         '<option value="' + c.id + '">' + esc(c.label) + '</option>').join('');
+
+      renderCapabilityMatrix();
 
       // Ask the server whether the Credo Agent can run here, so the tab shows
       // either the flow or an explanation rather than failing on click.
