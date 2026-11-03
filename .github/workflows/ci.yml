@@ -38,12 +38,17 @@ jobs:
       run: npm run lint
       working-directory: typescript
 
-    - name: Run tests
-      run: npm test
-      working-directory: typescript
-
     - name: Build
       run: npm run build
+      working-directory: typescript
+
+    # Runs after the build, not before it. `test/built-output.test.ts` checks
+    # the built artifacts in both module systems, and skips itself when
+    # `dist/` is missing — so testing first would silently skip the only
+    # tests that cover the packaging, and a broken `exports` map or a missing
+    # `bin` would reach the published tarball unnoticed.
+    - name: Run tests
+      run: npm test
       working-directory: typescript
 
   typescript-credo:

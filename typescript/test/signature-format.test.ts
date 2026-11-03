@@ -38,9 +38,10 @@ const RSA_2048: RsaHashedKeyGenParams = {
 /**
  * Attempt cap for the RSA leading-byte search.
  *
- * Each attempt succeeds with probability 1/256, so 10000 attempts leaves a
- * failure probability of (255/256)^10000 ≈ 10^-17 — small enough that a flake
- * means something is genuinely wrong rather than bad luck.
+ * Each attempt succeeds with probability between 1/256 and 1/128, depending
+ * on the CA modulus (see `makeRsaChainWithSignatureByte`), so 10000 attempts
+ * leaves a failure probability below (255/256)^10000 ≈ 10^-17 — small enough
+ * that a flake means something is genuinely wrong rather than bad luck.
  */
 const RSA_COLLISION_ATTEMPTS = 10_000;
 
@@ -101,14 +102,27 @@ async function makeChain(
 /**
  * Generate RSA chains until the leaf's signature begins with `0x30`.
  *
- * This is the exact input the old byte heuristic got wrong. Each attempt has a
- * ~1/256 chance, so the loop is inherently probabilistic and must be given
- * enough headroom to be reliable on a slow CI runner.
+ * This is the exact input the old byte heuristic got wrong. Each attempt has
+ * a 1/128 to 1/256 chance, so the loop is inherently probabilistic.
  *
- * The CA keypair is generated once and reused: only the leaf's signature is
- * measured, so regenerating the CA per attempt would roughly double the cost
- * for no benefit. This matters because RSA keygen dominates the runtime, and
- * the search needs several hundred attempts on average.
+ * What varies between attempts is the *signed bytes*, not the key. The leaf's
+ * signature is the CA's signature over the leaf's TBSCertificate, and the
+ * serial number is part of that TBSCertificate — so varying the serial number
+ * produces a different signature, at the cost of one RSA sign operation
+ * (~1ms) rather than a full keygen.
+ *
+ * The previous version generated a fresh leaf keypair per attempt. That cost
+ * a full RSA-2048 keygen per attempt (~44ms locally, and considerably more on
+ * a loaded CI runner), and the number of attempts is itself probabilistic, so
+ * the two multiplied: a slow runner turned a test that normally took a few
+ * seconds into one that ran past its timeout. Generating the leaf key once
+ * and varying only the serial makes the search ~40x cheaper and removes the
+ * variance, because the expensive part now happens exactly twice.
+ *
+ * On the leading-byte probability: an RSA signature is a uniform integer
+ * below the modulus, so its first byte is uniform only over the range below
+ * the modulus's own leading byte — between 1/128 and 1/256 rather than
+ * exactly 1/256.
  */
 async function makeRsaChainWithSignatureByte(byte: number): Promise<X509Certificate[]> {
   const now = new Date();
@@ -133,14 +147,18 @@ async function makeRsaChainWithSignatureByte(byte: number): Promise<X509Certific
   });
   const caCert = new X509Certificate(ca.rawData);
 
-  for (let attempt = 0; attempt < RSA_COLLISION_ATTEMPTS; attempt += 1) {
-    const leafKeys = (await crypto.subtle.generateKey(RSA_2048, true, [
-      'sign',
-      'verify',
-    ])) as CryptoKeyPair;
+  // One leaf keypair for the whole search; the serial number is what varies.
+  const leafKeys = (await crypto.subtle.generateKey(RSA_2048, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair;
 
+  for (let attempt = 0; attempt < RSA_COLLISION_ATTEMPTS; attempt += 1) {
     const leaf = await X509CertificateGenerator.create({
-      serialNumber: '02',
+      // A distinct serial number per attempt. It must stay positive and fit
+      // in an ASN.1 INTEGER, so it starts at 0x10000000 and stays below
+      // 0x80000000, which keeps the sign bit clear.
+      serialNumber: (0x10000000 + attempt).toString(16),
       subject: 'C=US,CN=Regression Leaf',
       issuer: 'C=US,CN=Regression Root CA',
       notBefore,
@@ -176,15 +194,15 @@ describe('verifyCertificateChain signature-format handling', () => {
   // happens to be the DER SEQUENCE tag. The old code ran the ECDSA DER→raw
   // conversion on it and verification failed for a valid chain.
   //
-  // Generating RSA keypairs until the colliding byte appears is inherently
-  // probabilistic (~1 in 256 per attempt), so this test needs a generous
-  // timeout. RSA keygen dominates the cost at ~40ms per attempt on a busy CI
-  // runner, and the expected number of attempts is ~256, so the timeout is set
-  // well above the expected runtime rather than near it. An earlier 60s budget
-  // was too tight and failed intermittently on CI.
+  // Generating the colliding signature is inherently probabilistic (~1/128 to
+  // ~1/256 per attempt), so this test needs a timeout. The search now costs
+  // about 1ms per attempt, so 60s is several times the worst case for all
+  // 10000 attempts; the earlier 120s budget was sized for a version that
+  // spent an RSA keygen on every attempt, which is what pushed it past the
+  // limit on a busy CI runner.
   it(
     'verifies a valid RSA chain whose signature begins with 0x30',
-    { timeout: 120_000 },
+    { timeout: 60_000 },
     async () => {
       const chain = await makeRsaChainWithSignatureByte(0x30);
       await expect(verifyCertificateChain(chain, true)).resolves.toBeUndefined();

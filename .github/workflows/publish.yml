@@ -114,6 +114,16 @@ jobs:
         working-directory: ${{ steps.target.outputs.dir }}
         run: npm ci
 
+      # Build before testing. `test/built-output.test.ts` checks the built
+      # artifacts in both module systems, and skips itself when `dist/` is
+      # missing — so testing first would silently skip the only tests that
+      # cover the packaging, and a broken `exports` map or a missing `bin`
+      # would reach the published tarball unnoticed.
+      - name: Build
+        shell: bash
+        working-directory: ${{ steps.target.outputs.dir }}
+        run: npm run build
+
       - name: Typecheck, lint, and test
         shell: bash
         working-directory: ${{ steps.target.outputs.dir }}
@@ -121,11 +131,6 @@ jobs:
           npm run typecheck
           npm run lint
           npm test
-
-      - name: Build
-        shell: bash
-        working-directory: ${{ steps.target.outputs.dir }}
-        run: npm run build
 
       # Publishing rewrites the `file:` link into the semver range the
       # registry actually understands, using the version in this checkout.
