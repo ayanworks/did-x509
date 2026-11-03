@@ -7,6 +7,21 @@ follows [Semantic Versioning](https://semver.org/).
 requires a matching release here — see
 [CONTRIBUTING.md](../CONTRIBUTING.md#cutting-a-release).
 
+## [0.1.1] — 2026-11-04
+
+Maintenance release. No API or behavioural changes.
+
+### Changed
+
+- Ship `CHANGELOG.md` in the published tarball, so the changelog linked from
+  the release notes is also available on npm (#32).
+- Use the `git+https://` form of `repository.url`, which is what npm expects
+  when it renders the repository link.
+- README: the install instructions no longer imply `@didx509/native` is
+  available. It is an optional peer dependency that has not shipped yet, so
+  the documented install uses the pure-TypeScript resolver in
+  `@didx509/core` (#32).
+
 ## [0.1.0] — 2026-10-21
 
 First release.
