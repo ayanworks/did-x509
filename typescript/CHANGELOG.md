@@ -3,6 +3,17 @@
 All notable changes to `@didx509/core` are documented here. The package
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-11-04
+
+Maintenance release. No API or behavioural changes.
+
+### Changed
+
+- Ship `CHANGELOG.md` in the published tarball, so the changelog linked from
+  the release notes is also available on npm (#32).
+- Use the `git+https://` form of `repository.url`, which is what npm expects
+  when it renders the repository link.
+
 ## [0.1.0] — 2026-10-21
 
 First release.
