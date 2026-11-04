@@ -60,7 +60,12 @@ jobs:
       version: ${{ steps.target.outputs.version }}
       dir: ${{ steps.target.outputs.dir }}
     steps:
+      # The credo suite reads the did:x509 spec vectors out of the pinned
+      # didx509cpp submodule, so the submodule has to be present here too.
+      # Without it, `npm test` fails with ENOENT before anything is published.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
