@@ -3,6 +3,17 @@
 All notable changes to `@didx509/native` are documented here. The package
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-11-04
+
+Maintenance release. No code changes; the resolver and pinned didx509cpp
+commit are unchanged.
+
+### Documentation
+
+- README: document the supported key types (EC P-256/P-384/P-521, RSA,
+  Ed25519) and note that the upstream resolver rejects `secp256k1` with
+  `unsupported EC key curve` (#40).
+
 ## [0.1.0] — 2026-10-20
 
 First release.

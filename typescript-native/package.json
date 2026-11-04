@@ -1,6 +1,6 @@
 {
   "name": "@didx509/native",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Native TypeScript binding for the did:x509 DID method, powered by Microsoft's didx509cpp resolver",
   "type": "module",
   "main": "./dist/index.cjs",

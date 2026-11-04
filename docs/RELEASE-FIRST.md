@@ -6,8 +6,8 @@ go through GitHub Actions:
 | Package | First published |
 | --- | --- |
 | `@didx509/core` | `0.1.0`, then `0.1.1`, then `0.1.2` |
-| `@didx509/credo` | `0.1.0`, then `0.1.1` |
-| `@didx509/native` | `0.1.0` |
+| `@didx509/credo` | `0.1.0`, then `0.1.1`, then `0.1.2` |
+| `@didx509/native` | `0.1.0`, then `0.1.1` |
 
 The one-time manual publish existed only because npm trusted publishing is
 configured on a *package's* settings page, and that page does not exist until
