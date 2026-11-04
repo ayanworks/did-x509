@@ -29,6 +29,26 @@ CA-issued X.509 cert
 
 The DID is derived from your certificate — no blockchain, no additional registration. The DID Document's public key comes directly from your leaf cert. The trust chain is your CA hierarchy.
 
+## Supported key types
+
+Resolution verifies every signature in the chain and exports the leaf public key
+as a JWK, so certificates must use a key type the runtime can handle:
+
+| Key type | Curves / parameters |
+|---|---|
+| EC (ECDSA) | P-256, P-384, P-521 |
+| RSA | PKCS#1 v1.5 (`RSASSA-PKCS1-v1_5`) and RSA-PSS |
+| Ed25519 | — |
+
+`secp256k1` certificates are **not supported**. Web Crypto has no
+implementation of that curve, and the C++ reference resolver behind
+[`@didx509/native`](https://www.npmjs.com/package/@didx509/native) rejects it
+too. Resolution fails with a message that names the curve:
+
+```
+unsupported EC curve "secp256k1" in leaf certificate: did:x509 supports P-256, P-384 and P-521
+```
+
 ## Installation
 
 ```bash

@@ -130,6 +130,14 @@ const jwk = extractPublicKeyAsJwk(chain[0]);
 // { kty: "EC", crv: "P-256", x: "...", y: "..." }
 ```
 
+Supported keys are EC on P-256/P-384/P-521, RSA (PKCS#1 v1.5 and RSA-PSS),
+and Ed25519. Other EC curves — notably `secp256k1` — are rejected because Web
+Crypto cannot import them, and `@didx509/native` rejects them as well:
+
+```text
+unsupported EC curve "secp256k1" in certificate: did:x509 supports P-256, P-384 and P-521
+```
+
 ---
 
 ## Step 5: Check Key Usage
