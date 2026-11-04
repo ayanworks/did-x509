@@ -124,9 +124,16 @@ function findVcvarsall() {
 // '/dll'" when it shells out. Running the build through cmd.exe with the
 // MSVC dev environment ensures cl.exe/link.exe/lib.exe resolve correctly.
 //
-// nmake is single-threaded, which makes the build take ~12 minutes. jom is
-// a drop-in nmake replacement with parallelism (`jom -j<N>`); we prefer it
-// when it is on PATH (CI installs it via chocolatey) and fall back to nmake.
+// nmake is single-threaded, which makes the build take ~12 minutes. jom is a
+// drop-in parallel replacement and roughly four times faster, but it renames
+// `makefile` while it still holds that file open, which fails on GitHub's
+// Windows runners during the `depend` step:
+//
+//   Trying to rename makefile-1268 -> makefile: Permission denied
+//   jom: ...\Makefile [depend] Error 13
+//
+// Serial nmake does not rewrite the makefile that way, so it is what we use.
+// The 12 minutes are worth a build that completes.
 function msvcMake(vcvarsall, makeArgs, cwd) {
   const args = Array.isArray(makeArgs) ? makeArgs : String(makeArgs).split(/\s+/).filter(Boolean);
   // Prefer the nmake that ships with the same MSVC install as vcvarsall
@@ -145,15 +152,8 @@ function msvcMake(vcvarsall, makeArgs, cwd) {
   if (!vcvarsall || !nmake) {
     fail('could not locate vcvarsall.bat or nmake.exe for the MSVC toolchain');
   }
-  const jom = findInPath('jom.exe') || findInPath('jom.cmd');
-  const jobs = Math.max(1, os.cpus().length);
-  const make = jom ? `"${jom}" -j${jobs}` : `"${nmake}"`;
-  console.log(
-    jom
-      ? `build-openssl: building with jom -j${jobs} (parallel)`
-      : 'build-openssl: jom not found — building with nmake (serial; ' +
-        'install jom for a much faster build)'
-  );
+  const make = `"${nmake}"`;
+  console.log('build-openssl: building with nmake (serial)');
   const tail = args.length ? ` ${args.join(' ')}` : '';
   const command = `call "${vcvarsall}" x64 >nul && ${make}${tail}`;
   // windowsVerbatimArguments is essential: without it libuv assembles the
@@ -161,7 +161,7 @@ function msvcMake(vcvarsall, makeArgs, cwd) {
   // not understand (it treats the backslashes literally), so the quoted
   // paths end up as literal '"...\vcvarsall.bat\"' filenames and are not
   // found. Verbatim mode passes our string through untouched, so cmd sees
-  // exactly `call "C:\...\vcvarsall.bat" x64 >nul && "C:\...\jom.exe" -j4`.
+  // exactly `call "C:\...\vcvarsall.bat" x64 >nul && "C:\...\nmake.exe"`.
   // Full path to cmd.exe: spawnSync does not resolve it from PATH reliably.
   const cmd = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
   run(cmd, ['/d', '/s', '/c', command], {
