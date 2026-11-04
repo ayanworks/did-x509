@@ -101,6 +101,17 @@ describe('did:x509 resolution', () => {
     ).rejects.toThrow();
   });
 
+  // Ported from the specification vector predicate-value-must-be-percent-encoded
+  it('rejects a predicate value that is not percent-encoded', async () => {
+    await expect(
+      resolveDidFromPem(
+        'did:x509:0:sha256:O6e2zE6VRp1NM0tJyyV62FNwdvqEsMqH_07P5qVGgME::fulcio-issuer:github.com%2Flogin%2Foauth::san:email:igarcia@suse.com',
+        fulcioEmailChainPem,
+        { skipValidityPeriodCheck: true }
+      )
+    ).rejects.toThrow(/invalid percent-encoded value/);
+  });
+
   // Ported from Python test_subject_duplicate_field
   it('rejects duplicate subject fields', async () => {
     await expect(

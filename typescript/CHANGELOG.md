@@ -5,7 +5,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [0.1.3] — 2026-11-05
 
-Patch release. One behavioural fix; no API changes.
+Patch release. Two behavioural fixes; no API changes.
 
 ### Fixed
 
@@ -17,6 +17,12 @@ Patch release. One behavioural fix; no API changes.
   comparison is now `pathLength < i - 1` (#44). `pathlen:0` on the issuing CA —
   the common way for a CA to say it issues only end-entity certificates — now
   resolves, and genuine violations are still rejected.
+- Predicate values are now validated as percent-encoded scalars, matching the
+  reference resolver: only unreserved characters and `%XX` escapes are
+  accepted, so a DID such as `…::san:email:user@example.com` is rejected
+  instead of being decoded leniently. Previously the path-length check failed
+  these chains first, hiding the difference; fixing #44 exposed it in the
+  parity suite. Values built with `pctEncode` are unaffected.
 
 ## [0.1.2] — 2026-11-04
 

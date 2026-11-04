@@ -85,12 +85,8 @@ resolver following the specification — plan for it when you migrate.
 - `unknown-critical-extension-is-rejected`
 - `unsupported-certificate-san-type`
 
-### rejected although the C++ resolver accepts them (81)
+### rejected although the C++ resolver accepts them (65)
 
-- `did-url-fragment-is-removed-from-document-id`
-- `eku`
-- `fulcio-issuer-with-email-san`
-- `fulcio-issuer-with-uri-san`
 - `fulcio-selector-algorithm-prefixed-digest`
 - `fulcio-selector-all-fields-opaque-forward`
 - `fulcio-selector-all-fields-opaque-reverse`
@@ -136,17 +132,11 @@ resolver following the specification — plan for it when you migrate.
 - `fulcio-selector-real-sigstore-js-source-repository-uri`
 - `fulcio-selector-real-sigstore-js-source-repository-visibility-at-signing`
 - `fulcio-selector-real-sigstore-js-token-subject`
-- `fulcio-selector-real-staging-legacy-issuer`
 - `fulcio-selector-reserved-and-utf8-token`
 - `fulcio-selector-san-and-token-subject-remain-separate`
 - `fulcio-selector-uri-existing-escape`
 - `fulcio-selector-v2-only-issuer`
 - `fulcio-selector-valid-replacement-character`
-- `intermediate-ca`
-- `multiple-predicates`
-- `path-length-permits-exact-depth`
-- `root-ca`
-- `san`
 - `san-othername-critical-empty-subject`
 - `san-othername-critical-without-fulcio-extensions`
 - `san-othername-duplicates-and-repeated-predicates`
@@ -161,26 +151,36 @@ resolver following the specification — plan for it when you migrate.
 - `san-othername-valid-replacement-character`
 - `san-othername-with-issuer-v2-and-token-subject-without-legacy-issuer`
 - `san-othername-with-legacy-issuer`
+- `subject-predicate-supports-dotted-oid`
+
+### produce a different DID document (28)
+
+- `certificate-validity-periods-are-not-checked`
+- `critical-certificate-policies-extension-is-accepted`
+- `did-url-fragment-is-removed-from-document-id`
+- `eku`
+- `fulcio-issuer-extension-is-accepted-when-not-critical`
+- `fulcio-issuer-with-email-san`
+- `fulcio-issuer-with-uri-san`
+- `fulcio-selector-empty-extension-is-retained`
+- `fulcio-selector-independent-dual-legacy-first-legacy`
+- `fulcio-selector-independent-dual-v2-first-legacy`
+- `fulcio-selector-real-staging-legacy-issuer`
+- `intermediate-ca`
+- `issuer-with-key-cert-sign-is-accepted`
+- `key-agreement-only-leaf`
+- `multiple-predicates`
+- `path-length-permits-exact-depth`
+- `path-length-permits-excess-headroom`
+- `root-ca`
+- `san`
+- `san-othername-mixed-san-existing-predicates`
+- `san-within-permitted-subtree`
 - `sha384-ca-fingerprint`
 - `sha512-ca-fingerprint`
 - `specification-eku-predicate`
 - `specification-fulcio-issuer-and-san`
 - `specification-intermediate-ca-fingerprint`
 - `specification-root-ca-fingerprint`
-- `subject-predicate-supports-dotted-oid`
-
-### produce a different DID document (12)
-
-- `certificate-validity-periods-are-not-checked`
-- `critical-certificate-policies-extension-is-accepted`
-- `fulcio-issuer-extension-is-accepted-when-not-critical`
-- `fulcio-selector-empty-extension-is-retained`
-- `fulcio-selector-independent-dual-legacy-first-legacy`
-- `fulcio-selector-independent-dual-v2-first-legacy`
-- `issuer-with-key-cert-sign-is-accepted`
-- `key-agreement-only-leaf`
-- `path-length-permits-excess-headroom`
-- `san-othername-mixed-san-existing-predicates`
-- `san-within-permitted-subtree`
 - `unknown-non-critical-extension-is-ignored`
 <!-- core-divergences:end -->

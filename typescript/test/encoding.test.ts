@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   b64url,
   b64urlDecode,
+  decodeScalar,
   pctEncode,
   pctDecode,
   parseNameString,
@@ -149,6 +150,36 @@ describe('pctDecode', () => {
     const original = 'CN=Test Corp, O=Acme Inc, C=US';
     const encoded = pctEncode(original);
     expect(pctDecode(encoded)).toBe(original);
+  });
+});
+
+describe('decodeScalar', () => {
+  it('decodes unreserved characters and percent escapes', () => {
+    expect(decodeScalar('hello%20world')).toBe('hello world');
+    expect(decodeScalar('abc123-._~')).toBe('abc123-._~');
+    expect(decodeScalar('user%40example.com')).toBe('user@example.com');
+  });
+
+  it('rejects reserved characters that are not percent-encoded', () => {
+    expect(() => decodeScalar('user@example.com')).toThrow(
+      /invalid percent-encoded value/
+    );
+    expect(() => decodeScalar('a b')).toThrow(/invalid percent-encoded value/);
+  });
+
+  it('rejects malformed escapes and empty values', () => {
+    expect(() => decodeScalar('')).toThrow(/empty percent-encoded value/);
+    expect(() => decodeScalar('abc%')).toThrow(/invalid percent-encoded value/);
+    expect(() => decodeScalar('abc%4')).toThrow(
+      /invalid percent-encoded value/
+    );
+    expect(() => decodeScalar('abc%GG')).toThrow(
+      /invalid percent-encoded value/
+    );
+  });
+
+  it('rejects escapes that are not valid UTF-8', () => {
+    expect(() => decodeScalar('%FF')).toThrow(/not valid UTF-8/);
   });
 });
 
