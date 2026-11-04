@@ -1,6 +1,6 @@
 {
   "name": "@didx509/core",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "TypeScript implementation of the did:x509 DID method - bridges X.509 certificates with Decentralized Identifiers",
   "type": "module",
   "main": "./dist/index.cjs",

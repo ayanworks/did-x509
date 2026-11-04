@@ -1,7 +1,7 @@
 // Copyright (c) AyanWorks. Licensed under the MIT License.
 // Original did:x509 specification by Microsoft Corporation.
 
-import { pctDecode, pctEncode } from './encoding.js';
+import { decodeScalar, pctEncode } from './encoding.js';
 import {
   decodeCertificate,
   verifyCertificateChain,
@@ -155,7 +155,7 @@ function validateSubjectPredicate(
     if (!(key in subject)) {
       throw new Error(`invalid subject key: ${key}`);
     }
-    const decodedValue = pctDecode(encodedValue);
+    const decodedValue = decodeScalar(encodedValue);
     const expectedValue = subject[key]!;
     if (decodedValue !== expectedValue) {
       throw new Error(
@@ -178,7 +178,7 @@ function validateSanPredicate(
   }
 
   const sanType = parts[0]!;
-  const sanValue = pctDecode(parts[1]!);
+  const sanValue = decodeScalar(parts[1]!);
   const san: [string, string | Record<string, string>] = [sanType, sanValue];
 
   const found = sans.some(
@@ -199,9 +199,10 @@ function validateEkuPredicate(value: string, ekus: string[]): void {
   if (ekus.length === 0) {
     throw new Error('no EKU extension in certificate');
   }
-  if (!ekus.includes(value)) {
+  const decoded = decodeScalar(value);
+  if (!ekus.includes(decoded)) {
     throw new Error(
-      `invalid EKU: ${value}, expected one of: ${ekus.join(', ')}`
+      `invalid EKU: ${decoded}, expected one of: ${ekus.join(', ')}`
     );
   }
 }
@@ -216,7 +217,7 @@ function validateFulcioIssuerPredicate(
   if (!fulcioIssuer) {
     throw new Error('no Fulcio issuer extension in certificate');
   }
-  const expected = 'https://' + pctDecode(value);
+  const expected = 'https://' + decodeScalar(value);
   if (expected !== fulcioIssuer) {
     throw new Error(
       `invalid Fulcio issuer: ${pctEncode(expected)}, expected: ${pctEncode(fulcioIssuer)}`

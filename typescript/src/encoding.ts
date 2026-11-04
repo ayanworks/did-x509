@@ -79,6 +79,41 @@ export function pctDecode(data: string): string {
 }
 
 /**
+ * Decode a scalar value from a DID predicate, enforcing the grammar the
+ * reference resolver uses: only unreserved characters (`A-Za-z0-9-._~`) and
+ * `%XX` escapes, and the decoded bytes must be valid UTF-8.
+ *
+ * `pctDecode` alone is too permissive for DID input: `decodeURIComponent`
+ * happily accepts reserved characters such as `@`, so `san:email:a@b.example`
+ * would resolve even though the value must be `a%40b.example`.
+ */
+export function decodeScalar(encoded: string): string {
+  if (encoded.length === 0) {
+    throw new Error('empty percent-encoded value');
+  }
+
+  for (let i = 0; i < encoded.length; i++) {
+    const char = encoded[i]!;
+    if (/^[A-Za-z0-9\-._~]$/.test(char)) {
+      continue;
+    }
+    const escape = encoded.slice(i, i + 3);
+    if (char !== '%' || !/^%[0-9A-Fa-f]{2}$/.test(escape)) {
+      throw new Error(
+        `invalid percent-encoded value: ${encoded} (reserved characters must be percent-encoded)`
+      );
+    }
+    i += 2;
+  }
+
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    throw new Error(`percent-encoded value is not valid UTF-8: ${encoded}`);
+  }
+}
+
+/**
  * Convert an X.509 name string (e.g. "CN=Example, O=Org") to a CertificateName object.
  */
 export function parseNameString(nameStr: string): CertificateName {
