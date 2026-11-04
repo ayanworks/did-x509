@@ -53,14 +53,16 @@ Each npm package versions independently and publishes from its own tag:
 
 | Package | Directory | Tag | Workflow |
 | --- | --- | --- | --- |
-| `@didx509/core` | `typescript/` | `core-v0.1.0` | [`publish.yml`](.github/workflows/publish.yml) |
-| `@didx509/credo` | `typescript-credo/` | `credo-v0.1.0` | [`publish.yml`](.github/workflows/publish.yml) |
-| `@didx509/native` | `typescript-native/` | `native-v0.1.0` | [`prebuild.yml`](.github/workflows/prebuild.yml) |
+| `@didx509/core` | `typescript/` | `core-v<version>` | [`publish.yml`](.github/workflows/publish.yml) |
+| `@didx509/credo` | `typescript-credo/` | `credo-v<version>` | [`publish.yml`](.github/workflows/publish.yml) |
+| `@didx509/native` | `typescript-native/` | `native-v<version>` | [`prebuild.yml`](.github/workflows/prebuild.yml) |
 
-Tags are prefixed with the package name because the packages version
-separately: a bare `v0.1.0` would be ambiguous across three packages. The
-workflow fails if the tag and the manifest version disagree, so a mistyped tag
-cannot publish a surprise.
+Tags are prefixed with the package name and a `v` before the version because
+the packages version separately: a bare `v0.1.0` would be ambiguous across
+three packages. Only pushed tags matching `core-v*`, `credo-v*` or `native-v*`
+publish to npm; a `workflow_dispatch` run builds, tests and packs but never
+publishes. The workflow also fails if the tag and the manifest version
+disagree, so a mistyped tag cannot publish a surprise.
 
 #### Cutting a release
 
@@ -73,6 +75,11 @@ cannot publish a surprise.
    git tag -s core-v0.1.1 -m "core-v0.1.1"
    git push git@github.com:ayanworks/did-x509.git core-v0.1.1
    ```
+
+Existing versions are skipped, not treated as failures: if the version is
+already on npm, the publish step logs that and the workflow continues to the
+release job. Re-running a tag build is therefore safe, and a version that was
+published by hand still gets its release page.
 
 The tag is what starts the publish, and it must exist before a GitHub release
 can be created — a release attaches to a tag, and the UI's tag picker only
@@ -89,8 +96,9 @@ Two ordering rules that matter:
   `@didx509/credo`, since credo depends on it.
 
 The release is a separate job from the publish, so if creating the release
-fails you can re-run just that job. A re-run of the whole workflow would stop
-at `npm publish` instead, because the version is already on npm.
+fails you can re-run just that job. Re-running the whole workflow is also safe:
+the publish step sees that the version is already on npm and skips straight to
+the release.
 
 #### When a `core` change forces a `credo` release
 
@@ -118,9 +126,17 @@ node -p "'^' + require('../typescript/package.json').version"
 
 Publishing uses npm trusted publishing (OIDC), so no `NPM_TOKEN` secret is
 needed. Configure a trusted publisher for each package on npmjs.com
-(Packages → the package → Settings → Trusted publishing), naming this
-repository, the `publish.yml` workflow (`prebuild.yml` for
-`@didx509/native`), and allowing `npm publish`.
+(Packages → the package → Settings → Trusted publishing):
+
+| Package | Organization | Repository | Workflow filename |
+| --- | --- | --- | --- |
+| `@didx509/core` | `ayanworks` | `did-x509` | `publish.yml` |
+| `@didx509/credo` | `ayanworks` | `did-x509` | `publish.yml` |
+| `@didx509/native` | `ayanworks` | `did-x509` | `prebuild.yml` |
+
+Allow `npm publish` and leave the environment blank. If the repository or the
+workflow has an `NPM_TOKEN` / `NODE_AUTH_TOKEN` secret, remove it: npm prefers
+a token over OIDC, which produces confusing authentication failures.
 
 A trusted publisher can only be configured once a package exists on npm, and a
 new configuration expires after two days without a successful publish — so add

@@ -25,6 +25,11 @@ name: Publish
 # three packages version independently, so each release covers one package and
 # none is marked "latest" — a single global "latest" would be misleading.
 
+# Only a pushed tag publishes to npm: `core-v*` / `credo-v*`, both of which
+# carry the `v` before the version. A `workflow_dispatch` run builds, tests and
+# packs the package but never publishes, so it can validate a release PR
+# without burning a version that npm will not let us reuse.
+
 on:
   push:
     tags:
@@ -157,7 +162,8 @@ jobs:
           ls -la ./*.tgz
 
       - name: Publish to npm
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        # Tags only. `workflow_dispatch` is a dry run: it stops after packing.
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         working-directory: ${{ steps.target.outputs.dir }}
         # Authentication comes from trusted publishing (OIDC), so no token is
@@ -166,7 +172,18 @@ jobs:
         # is what makes that exchange possible, and provenance then follows
         # automatically. A trusted publisher must be configured for the package
         # on npmjs.com, naming this repository and `publish.yml`.
-        run: npm publish --access public
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          # Re-runnable: npm refuses to publish a version that already exists,
+          # and that 403 would fail the job and skip the release. Skipping the
+          # publish keeps the release job running, so a version that is already
+          # on npm still gets its release page.
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm; skipping publish."
+            exit 0
+          fi
+          npm publish --access public
 
   # The release is a separate job so it can be re-run on its own. If it were
   # a step in the publish job, a failure would fail the whole job, and
