@@ -26,6 +26,71 @@ import type {
 const FULCIO_ISSUER_OID = '1.3.6.1.4.1.57264.1.1';
 
 /**
+ * EC curves did:x509 supports: the three NIST curves Web Crypto implements,
+ * which are also the curves the C++ reference resolver (didx509cpp, used by
+ * @didx509/native) accepts.
+ */
+const SUPPORTED_EC_CURVES = new Set(['P-256', 'P-384', 'P-521']);
+
+/**
+ * Curve names @peculiar/x509 reports that differ from their common names.
+ * It surfaces `secp256k1` as `K-256`, and the OID is not exposed on the
+ * parsed key.
+ */
+const EC_CURVE_NAMES: Record<string, string> = {
+  'K-256': 'secp256k1',
+};
+
+/**
+ * Reject certificate keys did:x509 cannot use, before they reach Web Crypto.
+ *
+ * `secp256k1` (and the brainpool curves) are valid in X.509, but Web Crypto
+ * has no implementation, so `subtle.importKey` fails with the opaque
+ * `NotSupportedError: Unrecognized namedCurve`. The C++ reference resolver
+ * rejects the same certificates ("unsupported EC key curve"), so this is a
+ * supported-algorithm boundary rather than a parsing bug. Fail with a message
+ * that names the curve and the curves that do work.
+ */
+function assertSupportedKeyAlgorithm(
+  cert: X509Certificate,
+  role: string
+): void {
+  const algorithm = cert.publicKey.algorithm as {
+    name?: string;
+    namedCurve?: string;
+  };
+  if (algorithm.name !== 'ECDSA' || !algorithm.namedCurve) return;
+  if (SUPPORTED_EC_CURVES.has(algorithm.namedCurve)) return;
+
+  const curve = EC_CURVE_NAMES[algorithm.namedCurve] ?? algorithm.namedCurve;
+  throw new Error(
+    `unsupported EC curve "${curve}" in ${role}: ` +
+      'did:x509 supports P-256, P-384 and P-521'
+  );
+}
+
+/**
+ * Export a certificate's public key, translating Web Crypto's runtime-specific
+ * `NotSupportedError` into a message that names the offending key.
+ */
+async function exportPublicKey(
+  cert: X509Certificate,
+  role: string
+): Promise<CryptoKey> {
+  assertSupportedKeyAlgorithm(cert, role);
+  try {
+    return await cert.publicKey.export();
+  } catch (error) {
+    if (error instanceof Error && error.name === 'NotSupportedError') {
+      throw new Error(
+        `unsupported public key algorithm in ${role}: ${error.message}`
+      );
+    }
+    throw error;
+  }
+}
+
+/**
  * Map @peculiar/x509 GeneralNameType to did:x509 SAN type names.
  */
 function mapSanType(type: GeneralNameType): string {
@@ -369,7 +434,7 @@ export async function verifyCertificateIssuedBy(
   const tbsBytes = extractTbsCertificate(cert);
 
   // Export the issuer's public key
-  let issuerPublicKey = await issuer.publicKey.export();
+  let issuerPublicKey = await exportPublicKey(issuer, 'issuer certificate');
 
   // X.509 certificates store ECDSA signatures in DER format, but Web Crypto
   // expects raw r||s (IEEE P1363) format. Branch on the certificate's declared
@@ -440,6 +505,16 @@ export async function verifyCertificateChain(
     throw new Error('Certificate chain must have at least two certificates');
   }
 
+  // Reject unsupported keys up front. The leaf's key is exported only later,
+  // when the DID Document is built, so without this check a `secp256k1` leaf
+  // would surface as the same opaque Web Crypto error there.
+  for (let i = 0; i < chain.length; i++) {
+    assertSupportedKeyAlgorithm(
+      chain[i]!,
+      i === 0 ? 'leaf certificate' : `certificate at index ${i}`
+    );
+  }
+
   // Verify each certificate is issued by the next
   for (let i = 0; i < chain.length - 1; i++) {
     await verifyCertificateIssuedBy(chain[i]!, chain[i + 1]!);
@@ -485,7 +560,7 @@ export async function extractPublicKeyAsJwk(
 ): Promise<Record<string, unknown>> {
   const crypto = getWebCrypto();
   // Export the public key to a CryptoKey, then to JWK
-  const cryptoKey = await cert.publicKey.export();
+  const cryptoKey = await exportPublicKey(cert, 'certificate');
   const jwk = await crypto.subtle.exportKey('jwk', cryptoKey);
   return jwk as Record<string, unknown>;
 }

@@ -82,6 +82,13 @@ const result = await resolver.resolve(did, {
 No prebuilt binary for your machine? The install script compiles from source
 automatically — you need CMake ≥ 3.18, a C++20 compiler, and OpenSSL ≥ 3.3.
 
+## Supported key types
+
+The upstream resolver accepts EC keys on P-256, P-384 and P-521, RSA, and
+Ed25519. Other curves — notably `secp256k1` — are rejected with the upstream
+message `unsupported EC key curve`. `@didx509/core` rejects the same
+certificates, so switching between the two does not change which keys work.
+
 ## Guarantees
 
 - **220/220 official test vectors pass.** The suite ships inside this

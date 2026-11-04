@@ -217,7 +217,10 @@ Verify a certificate chain: validates chain order, cryptographic signatures, bas
 - `chain` — Array of `X509Certificate` objects (leaf first, root last). Must have at least 2 certificates.
 - `skipValidityPeriodCheck` — If `true`, skip `notBefore`/`notAfter` checks. Default `false`.
 
-**Throws** if any verification step fails.
+**Throws** if any verification step fails, including when a certificate uses an
+unsupported key. Supported keys are EC on P-256/P-384/P-521, RSA (PKCS#1 v1.5
+and RSA-PSS), and Ed25519; other curves (e.g. `secp256k1`) fail with
+`unsupported EC curve "<curve>" in <role>`.
 
 ---
 
@@ -233,6 +236,10 @@ Extract the public key from a certificate as a JWK object using the Web Crypto A
 - `cert` — An `X509Certificate` object.
 
 **Returns:** JWK object (e.g., `{ kty, crv, x, y }` for EC keys).
+
+**Throws** when the key algorithm is not supported. EC keys must use P-256,
+P-384 or P-521; RSA and Ed25519 are also supported. `secp256k1` is rejected
+with `unsupported EC curve "secp256k1" in certificate`.
 
 ---
 
