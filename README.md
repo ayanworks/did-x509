@@ -1,3 +1,4 @@
+[![CI](https://github.com/ayanworks/did-x509/actions/workflows/ci.yml/badge.svg)](https://github.com/ayanworks/did-x509/actions/workflows/ci.yml)
 # did:x509
 
 This repository contains the specification and reference implementations of the did:x509 [DID](https://www.w3.org/TR/did-core/) method. It aims to achieve interoperability between existing X.509 solutions and Decentralized Identifiers (DIDs) to support operational models in which a full transition to DIDs is not achievable or desired yet. It is registered as a [DID method](https://w3c.github.io/did-extensions/methods/) with the did-wg in the W3C.
