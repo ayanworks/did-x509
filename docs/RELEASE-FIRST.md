@@ -5,7 +5,7 @@ go through GitHub Actions:
 
 | Package | First published |
 | --- | --- |
-| `@didx509/core` | `0.1.0`, then `0.1.1`, then `0.1.2` |
+| `@didx509/core` | `0.1.0`, then `0.1.1`, then `0.1.2`, then `0.1.3` |
 | `@didx509/credo` | `0.1.0`, then `0.1.1`, then `0.1.2` |
 | `@didx509/native` | `0.1.0`, then `0.1.1` |
 

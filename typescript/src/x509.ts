@@ -534,8 +534,12 @@ export async function verifyCertificateChain(
         if (
           bcExt.pathLength !== undefined &&
           bcExt.pathLength !== null &&
-          bcExt.pathLength < i
+          bcExt.pathLength < i - 1
         ) {
+          // RFC 5280 §4.2.1.9: pathLenConstraint bounds the number of
+          // non-self-issued intermediate CAs below this certificate; the leaf
+          // (index 0) does not count. So an issuer at index i has i - 1
+          // intermediates below it, and `pathlen:0` on the issuing CA is valid.
           throw new Error(
             `Certificate ${i} basic constraints: path length constraint violated`
           );

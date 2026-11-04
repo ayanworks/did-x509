@@ -3,6 +3,21 @@
 All notable changes to `@didx509/core` are documented here. The package
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] — 2026-11-05
+
+Patch release. One behavioural fix; no API changes.
+
+### Fixed
+
+- `verifyCertificateChain` rejected valid chains when the issuing CA carried
+  `basicConstraints: CA:TRUE, pathlen:0`, failing with
+  `Certificate 1 basic constraints: path length constraint violated`. Per
+  RFC 5280 §4.2.1.9 the leaf does not count towards `pathLenConstraint`, so an
+  issuer at chain index `i` has `i - 1` intermediate CAs below it and the
+  comparison is now `pathLength < i - 1` (#44). `pathlen:0` on the issuing CA —
+  the common way for a CA to say it issues only end-entity certificates — now
+  resolves, and genuine violations are still rejected.
+
 ## [0.1.2] — 2026-11-04
 
 Maintenance release. No API changes; one error-message fix and documentation.
