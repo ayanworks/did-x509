@@ -15,9 +15,9 @@
     "all": "node 01-resolve.ts && node 02-jsonld.ts && node 03-sd-jwt.ts && node 04-mdoc.ts && node 05-credo-askar.ts"
   },
   "dependencies": {
-    "@credo-ts/askar": "0.7.2",
-    "@credo-ts/core": "0.7.2",
-    "@credo-ts/node": "0.7.2",
+    "@credo-ts/askar": "0.7.4",
+    "@credo-ts/core": "0.7.4",
+    "@credo-ts/node": "0.7.4",
     "@didx509/core": "file:../typescript",
     "@didx509/credo": "file:../typescript-credo",
     "@openwallet-foundation/askar-nodejs": "0.6.1",

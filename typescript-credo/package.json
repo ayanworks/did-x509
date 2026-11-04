@@ -46,7 +46,7 @@
     }
   },
   "devDependencies": {
-    "@credo-ts/core": "0.7.2",
+    "@credo-ts/core": "0.7.4",
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^5.0.5",
     "eslint": "^9.39.5",

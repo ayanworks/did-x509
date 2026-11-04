@@ -12,9 +12,9 @@
     "smoke:credo": "node src/smoke-credo.ts"
   },
   "dependencies": {
-    "@credo-ts/askar": "^0.7.2",
-    "@credo-ts/core": "0.7.2",
-    "@credo-ts/node": "^0.7.2",
+    "@credo-ts/askar": "^0.7.4",
+    "@credo-ts/core": "0.7.4",
+    "@credo-ts/node": "^0.7.4",
     "@didx509/core": "file:../typescript",
     "@didx509/credo": "file:../typescript-credo",
     "@digitalbazaar/credentials-context": "3.2.0",
