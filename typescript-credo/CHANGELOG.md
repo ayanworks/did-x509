@@ -7,6 +7,23 @@ follows [Semantic Versioning](https://semver.org/).
 requires a matching release here — see
 [CONTRIBUTING.md](../CONTRIBUTING.md#cutting-a-release).
 
+## [0.1.2] — 2026-11-04
+
+Maintenance release.
+
+### Changed
+
+- Test against `@credo-ts/core` 0.7.4. It is a dev dependency; the peer range
+  stays `^0.7.0` because 0.7.4 is a patch release within it (#39).
+- Depend on `@didx509/core` `^0.1.2` (the `file:` link is rewritten at publish
+  time, #42).
+
+### Documentation
+
+- `@didx509/native` has shipped, so the README no longer describes it as
+  unpublished. It is an optional peer dependency, and installing it needs no
+  code change (#42).
+
 ## [0.1.1] — 2026-11-04
 
 Maintenance release. No API or behavioural changes.

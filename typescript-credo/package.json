@@ -1,6 +1,6 @@
 {
   "name": "@didx509/credo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "did:x509 method registry for credo-ts — resolve did:x509 DIDs in Credo agents",
   "type": "module",
   "main": "./dist/index.cjs",

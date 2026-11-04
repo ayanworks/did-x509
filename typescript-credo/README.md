@@ -32,9 +32,9 @@ the subject fields you choose to trust (e.g.
 the matching certificate chain can cryptographically prove control of the DID
 — no ledger required. This package resolves DIDs with the pure-TypeScript
 resolver in [`@didx509/core`](https://www.npmjs.com/package/@didx509/core),
-and falls back to it by default. When
-[`@didx509/native`](https://github.com/ayanworks/did-x509) ships — a wrapper
-around Microsoft's official
+and falls back to it by default. When the optional
+[`@didx509/native`](https://www.npmjs.com/package/@didx509/native) is
+installed — a wrapper around Microsoft's official
 [didx509cpp](https://github.com/microsoft/didx509cpp) reference resolver — the
 same code path uses it automatically.
 
@@ -48,13 +48,11 @@ npm install @didx509/credo
 | --- | --- |
 | `@didx509/credo` | This package — the Credo `DidResolver` implementation |
 | `@didx509/core` | Pure TypeScript resolver — installed automatically |
-| `@didx509/native` | **(optional, not yet published)** Microsoft's C++ resolver as a Node-API addon — prebuilt binaries, faster |
+| [`@didx509/native`](https://www.npmjs.com/package/@didx509/native) | **(optional)** Microsoft's C++ resolver as a Node-API addon — prebuilt binaries, faster |
 
 `@didx509/native` is an optional peer dependency, so it is skipped when it is
-not installed: the resolver transparently falls back to `@didx509/core`. It
-has not been published to npm yet, so the default install above uses the
-pure-TypeScript resolver. When it does ship, installing it alongside this
-package needs no code change.
+not installed: the resolver transparently falls back to `@didx509/core`. To
+use it, install it alongside this package — no code change is needed.
 
 
 ## Usage
@@ -172,8 +170,9 @@ register the resolver where the agent modules are assembled
 - [didx509cpp](https://github.com/microsoft/didx509cpp) — the C++ reference
   implementation this package wraps
 - [npm: @didx509/core](https://www.npmjs.com/package/@didx509/core)
-- [@didx509/native](https://github.com/ayanworks/did-x509/tree/main/typescript-native)
-  — source for the native wrapper; not yet published to npm
+- [npm: @didx509/native](https://www.npmjs.com/package/@didx509/native) —
+  Microsoft's C++ resolver as a Node-API addon, and its
+  [source](https://github.com/ayanworks/did-x509/tree/main/typescript-native)
 
 ## License
 
