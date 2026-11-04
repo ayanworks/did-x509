@@ -18,6 +18,10 @@ name: Prebuild & Publish
 #   prebuilds/<platform>-<arch>/node.napi.musl.node (Alpine)
 # - Linux builds run on ubuntu-22.04 so the binaries keep a glibc 2.35
 #   baseline instead of inheriting ubuntu-latest's newer glibc.
+# - macOS images are pinned rather than using macos-latest: when GitHub rotates
+#   the alias to a newer image, release runs queued for 15 minutes with no
+#   runner and were cancelled. Pin the arm64 leg to macos-14 (the image the
+#   alias pointed at when releases worked); macos-15-intel is already explicit.
 
 on:
   push:
@@ -39,7 +43,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-14
             tag: darwin-arm64
           - os: macos-15-intel
             tag: darwin-x64
